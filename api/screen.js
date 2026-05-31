@@ -1,18 +1,48 @@
-// Yahoo Finance based — no API key required
-const YF = 'https://query2.finance.yahoo.com';
+// Yahoo Finance quoteSummary — no API key, no auth required
+// Uses curated universe; YF screener POST now requires crumb auth so we skip it
 
+const YF = 'https://query2.finance.yahoo.com';
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Accept': 'application/json',
 };
 
-// Curated Nordic small/mid-cap universe (Oslo, Stockholm, Copenhagen, Helsinki)
-const NORDIC = [
-  'BOUVET.OL','CRAYON.OL','DNO.OL','SRBNK.OL','ATEA.OL','KAHOT.OL','AKSO.OL',
-  'NEL.OL','RECSI.OL','AKRBP.OL','SUBC.OL','PROTCT.OL','NSKOG.OL','MOWI.OL',
+// ── Curated universes ─────────────────────────────────────────────────────────
+const US_UNIVERSE = [
+  // Industrials / Manufacturing
+  'AAON','APOG','ARCB','GXO','HNI','MGRC','PATK','PLXS','POWL','SCSC',
+  'SSD','TREX','WDFC','GATX','AWI','BMI','CFX','WMS','AAON','HLIO',
+  'KFRC','MYRG','NVEE','TPI','ASTE','ROAD','BWXT','DRS','HAYW','SMPL',
+  // Technology (value)
+  'CNXC','CSG','NSIT','PLUS','SPOK','UTMD','HCKT','CDNS','PRFT','SAIC',
+  'CACI','LDOS','MTC','KEYW','SIEN','PCTY','ALTR','COHU','ONTO','SMTC',
+  // Financials (community banks, BDCs)
+  'AROW','BMTC','GBCI','HTBK','INDB','MBWM','RNST','TCBK','UMBF','WSBC',
+  'IBTX','SBCF','FFBC','FRME','OVLY','HBT','CBTX','NBTB','BSVN','HBCP',
+  'MAIN','TCPC','HTGC','GAIN','TPVG','ARCC','SLRC','MFIN','FCNCA','BRKL',
+  // Healthcare
+  'HALO','LMAT','MMSI','OMCL','PDCO','PRGO','ANIK','IART','PCRX','SEM',
+  'AMED','ADUS','ACCD','CCRN','ENSG','OPCH','PHR','PINC','SGRY','TRHC',
+  // Consumer
+  'BOOT','DORM','HIBB','MRTN','SBH','SCVL','EPC','HOFT','LESL','LQDT',
+  'CHEF','CATO','CONN','DBI','DLTH','FLXS','GMAN','JOUT','KIRK','RCKY',
+  // Energy (value / FCF)
+  'CIVI','CPE','SM','TALO','WHD','RES','CRK','GPOR','KOS','MGY',
+  'ESTE','HPK','VTLE','MTDR','CHRD','FLNC','PTEN','NR','NEX','OII',
+  // REITs / Real estate
+  'BRT','CLPR','PINE','STAG','UE','VRE','NXRT','ILPT','IIPR','PLYM',
+];
+
+const NORDIC_UNIVERSE = [
+  // Norway (Oslo)
+  'BOUVET.OL','CRAYON.OL','DNO.OL','SRBNK.OL','ATEA.OL','KAHOT.OL',
+  'AKSO.OL','NEL.OL','AKRBP.OL','SUBC.OL','PROTCT.OL','NSKOG.OL','MOWI.OL',
+  // Sweden (Stockholm)
   'VOLCAR-B.ST','HUSQ-B.ST','CAST.ST','NCC-B.ST','DIOS.ST','BUFAB.ST',
-  'LATO-B.ST','SWEC-B.ST','NIBE-B.ST','VITR.ST','SECU-B.ST','HIFA-B.ST',
+  'LATO-B.ST','SWEC-B.ST','VITR.ST','SECU-B.ST','HIFA-B.ST','NIBE-B.ST',
+  // Denmark (Copenhagen)
   'PNDORA.CO','COLO-B.CO','GN.CO','RBREW.CO','ROCK-B.CO','FLS.CO','CHR.CO',
+  // Finland (Helsinki)
   'NESTE.HE','OUT1V.HE','TIETO.HE','KESKOB.HE','METSO.HE','WRT1V.HE','ORNBV.HE',
 ];
 
@@ -25,48 +55,36 @@ function parseMktCap(mktcap) {
 
 function fmt(v) {
   if (v == null) return 'N/A';
-  if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}b`;
+  if (v >= 1e9)  return `$${(v / 1e9).toFixed(1)}b`;
   return `$${(v / 1e6).toFixed(0)}m`;
 }
 
-async function yfGet(url) {
+async function quoteSummary(symbol) {
   try {
-    const r = await fetch(url, { headers: HEADERS });
+    const r = await fetch(
+      `${YF}/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=keyStatistics,financialData,price`,
+      { headers: HEADERS }
+    );
     if (!r.ok) return null;
-    return r.json();
+    const d = await r.json();
+    const result = d?.quoteSummary?.result?.[0];
+    if (!result) return null;
+    return { ks: result.keyStatistics, fd: result.financialData, pr: result.price };
   } catch { return null; }
 }
 
-async function quoteSummary(symbol) {
-  const d = await yfGet(`${YF}/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=keyStatistics,financialData,price`);
-  const r = d?.quoteSummary?.result?.[0];
-  if (!r) return null;
-  return { ks: r.keyStatistics, fd: r.financialData, pr: r.price };
+function regionOf(symbol) {
+  if (symbol.endsWith('.OL') || symbol.endsWith('.ST') ||
+      symbol.endsWith('.CO') || symbol.endsWith('.HE')) return 'nordic';
+  return 'us';
 }
 
-async function yfScreenerUS(min, max, maxEv) {
-  const ops = [
-    { operator: 'gt', operands: ['intradaymarketcap', min || 10e6] },
-    { operator: 'gt', operands: ['enterprisevalueebidta', 0.1] },
-    { operator: 'lt', operands: ['enterprisevalueebidta', maxEv] },
-  ];
-  if (max) ops.push({ operator: 'lt', operands: ['intradaymarketcap', max] });
-
-  try {
-    const r = await fetch(`${YF}/v1/finance/screener`, {
-      method: 'POST',
-      headers: { ...HEADERS, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        offset: 0, size: 30,
-        sortField: 'intradaymarketcap', sortType: 'asc',
-        quoteType: 'EQUITY',
-        query: { operator: 'and', operands: ops },
-        userId: '', userIdType: 'guid',
-      }),
-    });
-    const d = await r.json();
-    return d?.finance?.result?.[0]?.quotes || [];
-  } catch { return []; }
+function exchangeOf(symbol) {
+  if (symbol.endsWith('.OL')) return 'Oslo';
+  if (symbol.endsWith('.ST')) return 'Stockholm';
+  if (symbol.endsWith('.CO')) return 'Copenhagen';
+  if (symbol.endsWith('.HE')) return 'Helsinki';
+  return 'US';
 }
 
 export default async function handler(req, res) {
@@ -74,85 +92,65 @@ export default async function handler(req, res) {
 
   const { universe, mktcap, ev_ebit, fcf_yield } = req.body;
   const { min, max }  = parseMktCap(mktcap);
-  const maxEv         = parseFloat(ev_ebit)   || 5;
+  const maxEv         = parseFloat(ev_ebit)    || 5;
   const minFcfYield   = (parseFloat(fcf_yield) || 3) / 100;
   const inclUS        = universe !== 'Nordic only';
   const inclNordic    = universe !== 'US only';
 
-  let candidates = [];
+  // Build candidate list from universes
+  let pool = [];
+  if (inclUS)     pool.push(...US_UNIVERSE);
+  if (inclNordic) pool.push(...NORDIC_UNIVERSE);
 
-  if (inclUS) {
-    const hits = await yfScreenerUS(min, max, maxEv);
-    candidates.push(...hits.map(q => ({
-      symbol:   q.symbol,
-      name:     q.shortName || q.longName || q.symbol,
-      exchange: q.fullExchangeName || 'US',
-      region:   'us',
-      mktCap:   q.marketCap,
-    })));
-  }
+  // Shuffle and sample 30 for speed (Vercel 10s timeout)
+  const sample = pool.sort(() => Math.random() - 0.5).slice(0, 30);
 
-  if (inclNordic) {
-    const sample = [...NORDIC].sort(() => Math.random() - 0.5).slice(0, 15);
-    candidates.push(...sample.map(sym => ({
-      symbol:   sym,
-      name:     sym,
-      exchange: sym.endsWith('.OL') ? 'Oslo' : sym.endsWith('.ST') ? 'Stockholm'
-               : sym.endsWith('.CO') ? 'Copenhagen' : 'Helsinki',
-      region:   'nordic',
-      mktCap:   null,
-    })));
-  }
+  // Fetch metrics in parallel
+  const summaries = await Promise.allSettled(sample.map(s => quoteSummary(s)));
 
-  if (!candidates.length) return res.json({ stocks: [] });
-
-  // Fetch metrics in parallel (cap at 25 to stay within 10s Vercel timeout)
-  const pool = candidates.slice(0, 25);
-  const summaries = await Promise.allSettled(pool.map(c => quoteSummary(c.symbol)));
-
-  const enriched = pool.map((c, i) => {
+  const enriched = sample.map((sym, i) => {
     const m = summaries[i].status === 'fulfilled' ? summaries[i].value : null;
     if (!m) return null;
 
-    const mktCapV  = m.pr?.marketCap?.raw  || c.mktCap;
+    const mktCapV   = m.pr?.marketCap?.raw;
+    const evEbitda  = m.ks?.enterpriseToEbitda?.raw;
     const totalDebt = m.fd?.totalDebt?.raw  || 0;
     const totalCash = m.fd?.totalCash?.raw  || 0;
     const fcf       = m.fd?.freeCashflow?.raw;
     const ev        = mktCapV ? mktCapV + totalDebt - totalCash : null;
-    const evEbitda  = m.ks?.enterpriseToEbitda?.raw;
     const fcfYield  = ev && fcf ? fcf / ev : null;
+    const name      = m.pr?.shortName || m.pr?.longName || sym;
 
-    // Market cap filter for Nordic
-    if (c.region === 'nordic' && mktCapV) {
-      if (min && mktCapV < min) return null;
-      if (max && mktCapV > max) return null;
-    }
+    // Market cap filter
+    if (mktCapV && min && mktCapV < min) return null;
+    if (mktCapV && max && mktCapV > max) return null;
 
-    return {
-      ...c,
-      name:     m.pr?.shortName || m.pr?.longName || c.name,
-      mktCap:   mktCapV,
-      evEbitda,
-      fcfYield,
-    };
+    return { sym, name, mktCapV, evEbitda, fcfYield, region: regionOf(sym), exchange: exchangeOf(sym) };
   }).filter(Boolean);
 
-  // Filter: EV/EBITDA is primary gate; FCF yield as secondary sort boost
-  const filtered = enriched
-    .filter(s => s.evEbitda != null && s.evEbitda > 0 && s.evEbitda <= maxEv)
-    .sort((a, b) => {
-      // Prefer stocks that also pass FCF filter
-      const aFcf = (a.fcfYield ?? 0) >= minFcfYield ? 0 : 1;
-      const bFcf = (b.fcfYield ?? 0) >= minFcfYield ? 0 : 1;
-      if (aFcf !== bFcf) return aFcf - bFcf;
-      return (a.evEbitda ?? 999) - (b.evEbitda ?? 999);
-    });
+  // Filter: EV/EBITDA required; FCF yield as secondary
+  const passed = enriched.filter(s => s.evEbitda != null && s.evEbitda > 0 && s.evEbitda <= maxEv);
 
-  const stocks = filtered.slice(0, 8).map(s => ({
-    ticker:    s.symbol,
+  // Sort: stocks passing FCF filter first, then by lowest EV/EBITDA
+  passed.sort((a, b) => {
+    const aOk = (a.fcfYield ?? -1) >= minFcfYield ? 0 : 1;
+    const bOk = (b.fcfYield ?? -1) >= minFcfYield ? 0 : 1;
+    if (aOk !== bOk) return aOk - bOk;
+    return (a.evEbitda ?? 999) - (b.evEbitda ?? 999);
+  });
+
+  // Fallback: if nothing passes EV filter, return lowest EV/EBITDA from enriched
+  const results = passed.length ? passed : enriched
+    .filter(s => s.evEbitda != null && s.evEbitda > 0)
+    .sort((a, b) => a.evEbitda - b.evEbitda);
+
+  if (!results.length) return res.json({ stocks: [] });
+
+  const stocks = results.slice(0, 8).map(s => ({
+    ticker:    s.sym,
     exchange:  s.exchange,
     name:      s.name,
-    mktcap:    fmt(s.mktCap),
+    mktcap:    fmt(s.mktCapV),
     ev_ebitda: s.evEbitda != null ? s.evEbitda.toFixed(1) + 'x' : 'N/A',
     fcf_yield: s.fcfYield != null ? (s.fcfYield * 100).toFixed(1) + '%' : 'N/A',
     region:    s.region,
@@ -160,6 +158,6 @@ export default async function handler(req, res) {
 
   return res.json({
     stocks,
-    debug: { candidates: candidates.length, enriched: enriched.length, filtered: filtered.length },
+    debug: { sampled: sample.length, enriched: enriched.length, passed: passed.length },
   });
 }
