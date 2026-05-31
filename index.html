@@ -684,9 +684,7 @@ async function callClaude(systemPrompt, userMsg, webSearch = true) {
     system: systemPrompt,
     messages: [{ role: 'user', content: userMsg }],
   };
-  if (webSearch) {
-    body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
-  }
+  // web search removed — screening now uses real FMP data instead
 
   const res = await fetch('/api/claude', {
     method: 'POST',
@@ -768,9 +766,9 @@ async function runScreener() {
   const p = {
     universe:   document.getElementById('s-universe').value,
     mktcap:     document.getElementById('s-mktcap').value,
-    ev_ebit:    document.getElementById('s-evebit').value + 'x',
-    fcf_yield:  document.getElementById('s-fcf').value + '%',
-    insider_own:document.getElementById('s-insider').value + '%',
+    ev_ebit:    document.getElementById('s-evebit').value,
+    fcf_yield:  document.getElementById('s-fcf').value,
+    insider_own:document.getElementById('s-insider').value,
     inflection: document.getElementById('s-inflection').value,
     focus:      document.getElementById('s-focus').value.trim() || 'any',
   };
@@ -779,16 +777,47 @@ async function runScreener() {
   setLoading('s', true);
   document.getElementById('s-results').innerHTML = '';
 
-  const sys = `You are a senior buy-side equity analyst doing a weekly stock screening. Use web search to find real investable stocks that plausibly fit these criteria as of today. Universe: ${p.universe}. Market cap: ${p.mktcap}. Max EV/EBIT: ${p.ev_ebit}. Min FCF yield: ${p.fcf_yield}. Min insider ownership: ${p.insider_own}. Business inflection: ${p.inflection}. Additional focus: ${p.focus}. Find 4–5 real stocks. For each: ticker, exchange, company name, one-sentence business description, EV/EBIT estimate, FCF yield estimate, insider ownership %, market cap, 3–4 sentence investment thesis (what the business does, why cheap relative to quality, what the inflection driver is, primary risk), and one key thing to verify before going deeper. Prioritise less-covered names. Note uncertainty honestly. Respond only as a raw JSON array with fields: ticker, exchange, name, tagline, ev_ebit, fcf_yield, insider_own, mktcap, thesis, verify, region (nordic or us).`;
-
   try {
-    const raw   = await callClaude(sys, 'Run the screen now and return the JSON array.');
+    // Step 1: Screen with real FMP data
+    document.querySelector('#s-load .loading-msg').textContent = 'Fetching real financial data…';
+    const screenRes = await fetch('/api/screen', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(p),
+    });
+    const screenData = await screenRes.json();
+    if (screenData.error) throw new Error(screenData.error);
+
+    const stocks = screenData.stocks || [];
+    if (!stocks.length) {
+      setError('s', 'No stocks matched your criteria. Try relaxing the filters.');
+      return;
+    }
+
+    // Step 2: Ask Claude to write theses only (no web search — tiny token usage)
+    document.querySelector('#s-load .loading-msg').textContent = `Found ${stocks.length} matches — writing theses…`;
+    const apiKey = getKey();
+    if (!apiKey) throw new Error('API key not set — go to Settings.');
+
+    const sys = `You are a senior buy-side equity analyst. The following stocks have passed a quantitative screen using real financial data from Financial Modeling Prep. For each stock write: a one-sentence business description (tagline), a 3–4 sentence investment thesis (what the business does, why it looks cheap, what the potential catalyst is, primary risk), and one specific thing to verify before going deeper. Be honest about uncertainty. Respond ONLY as a raw JSON array with fields: ticker, exchange, name, tagline, ev_ebitda, fcf_yield, mktcap, thesis, verify, region.`;
+
+    const userMsg = `Write investment theses for these screened stocks and return the JSON array:\n${JSON.stringify(stocks, null, 2)}`;
+
+    const raw   = await callClaude(sys, userMsg, false);
     const ideas = parseJSON(raw);
-    pushHistory('Metric Screener', p, ideas);
-    renderScreenerResults(ideas, 's-results');
+
+    // Merge real metrics back in (authoritative)
+    const merged = ideas.map(idea => {
+      const real = stocks.find(s => s.ticker === idea.ticker);
+      return real ? { ...idea, ev_ebitda: real.ev_ebitda, fcf_yield: real.fcf_yield, mktcap: real.mktcap } : idea;
+    });
+
+    pushHistory('Metric Screener', p, merged);
+    renderScreenerResults(merged, 's-results');
   } catch (e) {
     setError('s', e.message);
   } finally {
+    document.querySelector('#s-load .loading-msg').textContent = 'Scanning — this takes 20–40 seconds…';
     setLoading('s', false);
   }
 }
@@ -805,7 +834,7 @@ function screenerCard(idea) {
     <div class="co-name">${esc(idea.name)}</div>
     <div class="tagline">${esc(idea.tagline)}</div>
     <div class="chips">
-      <div class="chip"><span class="chip-label">EV/EBIT </span><span class="chip-val">${esc(idea.ev_ebit)}</span></div>
+      <div class="chip"><span class="chip-label">EV/EBITDA </span><span class="chip-val">${esc(idea.ev_ebitda || idea.ev_ebit)}</span></div>
       <div class="chip"><span class="chip-label">FCF yield </span><span class="chip-val">${esc(idea.fcf_yield)}</span></div>
       <div class="chip"><span class="chip-label">Insider own. </span><span class="chip-val">${esc(idea.insider_own)}</span></div>
       <div class="chip"><span class="chip-label">Mkt cap </span><span class="chip-val">${esc(idea.mktcap)}</span></div>
