@@ -871,23 +871,47 @@ async function runCatalyst() {
     lookback: document.getElementById('c-lookback').value,
     mktcap:   document.getElementById('c-mktcap').value,
     sector:   document.getElementById('c-sector').value.trim() || 'any',
-    events:   selected.join(', '),
+    events:   selected,
   };
 
   setError('c', '');
   setLoading('c', true);
   document.getElementById('c-results').innerHTML = '';
 
-  const sys = `You are a senior event-driven equity analyst. Use web search to scan for real corporate events and business inflections in the ${p.lookback}. Universe: ${p.universe}. Market cap: ${p.mktcap}. Sector: ${p.sector}. Event types to find: ${p.events}. Sources to check: SEC EDGAR (8-K, 13D/G, Form 4 filings), Oslo Bors/Newsweb announcements, Nasdaq Nordic disclosures, company press releases, financial news. Find 4–5 genuinely interesting setups — not routine announcements. For each: ticker, exchange, company name, event type, one-sentence event summary, 3–4 sentence thesis (what happened, why the market may be mispricing it, what the setup is, key risk), and one concrete next step for due diligence. Respond only as a raw JSON array with fields: ticker, exchange, name, event_type, event_summary, thesis, next_step, region (nordic or us).`;
-
   try {
-    const raw   = await callClaude(sys, 'Scan for catalyst events now and return the JSON array.');
+    // Step 1: Fetch real filings from EDGAR + Newsweb
+    document.querySelector('#c-load .loading-msg').textContent = 'Fetching filings from SEC EDGAR & Oslo Bors…';
+    const filingsRes = await fetch('/api/filings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(p),
+    });
+    const { filings = [], start, end } = await filingsRes.json();
+
+    if (!filings.length) {
+      setError('c', 'No filings found for these criteria. Try a longer lookback window or different event types.');
+      return;
+    }
+
+    // Step 2: Claude identifies the most interesting setups (~3-4k tokens, no web search)
+    document.querySelector('#c-load .loading-msg').textContent = `Found ${filings.length} filings — identifying best setups…`;
+
+    const apiKey = getKey();
+    if (!apiKey) throw new Error('API key not set — go to Settings.');
+
+    const sys = `You are a senior event-driven equity analyst. You have been given real corporate filings from SEC EDGAR and Oslo Bors covering ${start} to ${end}. From this list, identify the 4–5 most genuinely interesting setups for event-driven investors. Skip routine/boilerplate filings. Prioritise less-covered names and filings that suggest mispricing. For each: ticker (your best guess from the entity name — US exchange listing symbol), exchange (NYSE or NASDAQ for US; Oslo/Stockholm/etc for Nordic), company name, event type, 1-sentence event summary, 3–4 sentence thesis (what happened, why the market may be mispricing it, the setup, key risk), and one concrete next due-diligence step. Be honest if a ticker is uncertain. Return ONLY a raw JSON array with fields: ticker, exchange, name, event_type, event_summary, thesis, next_step, region.`;
+
+    const userMsg = `Here are the real filings. Return the JSON array of 4–5 best setups:\n${JSON.stringify(filings, null, 2)}`;
+
+    const raw   = await callClaude(sys, userMsg, false);
     const ideas = parseJSON(raw);
-    pushHistory('Catalyst Scanner', p, ideas);
+
+    pushHistory('Catalyst Scanner', { ...p, events: p.events.join(', ') }, ideas);
     renderCatalystResults(ideas, 'c-results');
   } catch (e) {
     setError('c', e.message);
   } finally {
+    document.querySelector('#c-load .loading-msg').textContent = 'Scanning — this takes 20–40 seconds…';
     setLoading('c', false);
   }
 }

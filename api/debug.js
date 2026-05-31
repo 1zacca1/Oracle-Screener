@@ -1,37 +1,52 @@
-const FMP = 'https://financialmodelingprep.com/api';
+const YF = 'https://query2.finance.yahoo.com';
+const H = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' };
 
 export default async function handler(req, res) {
-  const key = process.env.FMP_API_KEY;
-  if (!key) return res.status(500).json({ error: 'No FMP_API_KEY' });
-
   const results = {};
 
-  // Test 1: screener with no exchange filter (US, any mktcap)
-  const s1 = await fetch(`${FMP}/v3/stock-screener?isActivelyTrading=true&isEtf=false&limit=5&apikey=${key}`);
-  results.screener_nofilter = await s1.json();
+  // Test 1: quoteSummary for a known ticker
+  const r1 = await fetch(`${YF}/v10/finance/quoteSummary/AAPL?modules=keyStatistics,financialData,price`, { headers: H });
+  const d1 = await r1.json();
+  const m = d1?.quoteSummary?.result?.[0];
+  results.AAPL = m ? {
+    evEbitda:  m.keyStatistics?.enterpriseToEbitda?.raw,
+    fcf:       m.financialData?.freeCashflow?.raw,
+    mktCap:    m.price?.marketCap?.raw,
+    totalDebt: m.financialData?.totalDebt?.raw,
+    totalCash: m.financialData?.totalCash?.raw,
+  } : d1;
 
-  // Test 2: screener with country=US
-  const s2 = await fetch(`${FMP}/v3/stock-screener?country=US&isActivelyTrading=true&isEtf=false&limit=5&apikey=${key}`);
-  results.screener_US = await s2.json();
+  // Test 2: Nordic ticker
+  const r2 = await fetch(`${YF}/v10/finance/quoteSummary/BOUVET.OL?modules=keyStatistics,financialData,price`, { headers: H });
+  const d2 = await r2.json();
+  const m2 = d2?.quoteSummary?.result?.[0];
+  results.BOUVET_OL = m2 ? {
+    evEbitda:  m2.keyStatistics?.enterpriseToEbitda?.raw,
+    fcf:       m2.financialData?.freeCashflow?.raw,
+    mktCap:    m2.price?.marketCap?.raw,
+  } : d2;
 
-  // Test 3: screener with exchange=NYSE
-  const s3 = await fetch(`${FMP}/v3/stock-screener?exchange=NYSE&isActivelyTrading=true&isEtf=false&limit=5&apikey=${key}`);
-  results.screener_NYSE = await s3.json();
-
-  // Test 4: screener with country=NO (Norway)
-  const s4 = await fetch(`${FMP}/v3/stock-screener?country=NO&isActivelyTrading=true&isEtf=false&limit=5&apikey=${key}`);
-  results.screener_Norway = await s4.json();
-
-  // Test 5: key metrics for AAPL (known working)
-  const s5 = await fetch(`${FMP}/v3/key-metrics-ttm/AAPL?apikey=${key}`);
-  results.metrics_AAPL = await s5.json();
-
-  // Test 6: key metrics for first result of nofilter screener
-  if (Array.isArray(results.screener_nofilter) && results.screener_nofilter[0]) {
-    const sym = results.screener_nofilter[0].symbol;
-    const s6 = await fetch(`${FMP}/v3/key-metrics-ttm/${sym}?apikey=${key}`);
-    results[`metrics_${sym}`] = await s6.json();
-  }
+  // Test 3: YF screener POST
+  const r3 = await fetch(`${YF}/v1/finance/screener`, {
+    method: 'POST',
+    headers: { ...H, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      offset: 0, size: 5,
+      sortField: 'intradaymarketcap', sortType: 'asc',
+      quoteType: 'EQUITY',
+      query: { operator: 'and', operands: [
+        { operator: 'gt', operands: ['enterprisevalueebidta', 0.1] },
+        { operator: 'lt', operands: ['enterprisevalueebidta', 6] },
+        { operator: 'gt', operands: ['intradaymarketcap', 50e6] },
+        { operator: 'lt', operands: ['intradaymarketcap', 2e9] },
+      ]},
+      userId: '', userIdType: 'guid',
+    }),
+  });
+  const d3 = await r3.json();
+  results.screener = d3?.finance?.result?.[0]?.quotes?.map(q => ({
+    symbol: q.symbol, name: q.shortName, mktCap: q.marketCap,
+  })) ?? d3;
 
   return res.json(results);
 }
