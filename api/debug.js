@@ -1,67 +1,73 @@
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
 export default async function handler(req, res) {
+  const UA_SEC   = { 'User-Agent': 'Oracle-Screener/1.0 contact@oracle-screener.app' };
+  const UA_PLAIN = { 'User-Agent': 'Mozilla/5.0' };
   const out = {};
 
-  // Step 1: get cookies
+  // Test 1: SEC company tickers (CIK lookup)
   try {
-    const r1 = await fetch('https://finance.yahoo.com/', {
-      headers: { 'User-Agent': UA, 'Accept': 'text/html' }, redirect: 'follow',
-    });
-    const setCookie = r1.headers.get('set-cookie') || '';
-    const cookies = setCookie.split(',').map(c => c.split(';')[0].trim()).filter(Boolean).join('; ');
-    out.cookies_ok = !!cookies;
-    out.cookies_sample = cookies.slice(0, 80);
+    const r = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: UA_SEC });
+    const d = await r.json();
+    const aapl = Object.values(d).find(e => e.ticker === 'AAPL');
+    out.sec_tickers_ok = !!aapl;
+    out.sec_aapl_cik   = aapl?.cik_str;
+  } catch (e) { out.sec_tickers_err = e.message; }
 
-    // Step 2: get crumb
-    const r2 = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
-      headers: { 'User-Agent': UA, 'Cookie': cookies },
-    });
-    const crumb = (await r2.text()).trim();
-    out.crumb = crumb;
-    out.crumb_ok = !!crumb && !crumb.includes('{');
-
-    // Step 3: test quoteSummary with crumb
-    if (out.crumb_ok) {
-      const r3 = await fetch(
-        `https://query2.finance.yahoo.com/v10/finance/quoteSummary/AAPL?modules=keyStatistics,financialData,price&crumb=${encodeURIComponent(crumb)}`,
-        { headers: { 'User-Agent': UA, 'Cookie': cookies } }
-      );
-      const d3 = await r3.json();
-      const result = d3?.quoteSummary?.result?.[0];
-      out.AAPL_ok      = !!result;
-      out.AAPL_evEbitda = result?.keyStatistics?.enterpriseToEbitda?.raw ?? null;
-      out.AAPL_fcf      = result?.financialData?.freeCashflow?.raw ?? null;
-      out.AAPL_mktCap   = result?.price?.marketCap?.raw ?? null;
-      out.AAPL_error    = d3?.quoteSummary?.error ?? null;
-
-      // Step 4: test Nordic ticker
-      const r4 = await fetch(
-        `https://query2.finance.yahoo.com/v10/finance/quoteSummary/BOUVET.OL?modules=keyStatistics,financialData,price&crumb=${encodeURIComponent(crumb)}`,
-        { headers: { 'User-Agent': UA, 'Cookie': cookies } }
-      );
-      const d4 = await r4.json();
-      const result4 = d4?.quoteSummary?.result?.[0];
-      out.BOUVET_ok      = !!result4;
-      out.BOUVET_evEbitda = result4?.keyStatistics?.enterpriseToEbitda?.raw ?? null;
-      out.BOUVET_error    = d4?.quoteSummary?.error ?? null;
-    }
-  } catch (e) {
-    out.error = e.message;
-  }
-
-  // Also test EDGAR (independent)
+  // Test 2: EDGAR XBRL company concept (operating cash flow for AAPL CIK=320193)
   try {
-    const r5 = await fetch(
-      'https://efts.sec.gov/LATEST/search-index?forms=8-K&dateRange=custom&startdt=2026-05-01&enddt=2026-05-31&q=%22spinoff%22',
-      { headers: { 'User-Agent': 'Oracle-Screener/1.0 contact@example.com' } }
+    const r = await fetch(
+      'https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/NetCashProvidedByUsedInOperatingActivities.json',
+      { headers: UA_SEC }
     );
-    const d5 = await r5.json();
-    out.edgar_ok    = r5.ok;
-    out.edgar_hits  = d5?.hits?.total?.value ?? 0;
-  } catch (e) {
-    out.edgar_error = e.message;
-  }
+    const d = await r.json();
+    const entries = d?.units?.USD || [];
+    const annual = entries.filter(e => e.form === '10-K').sort((a, b) => b.end.localeCompare(a.end));
+    out.edgar_xbrl_ok        = r.ok && annual.length > 0;
+    out.edgar_aapl_ocf       = annual[0]?.val;
+    out.edgar_aapl_ocf_end   = annual[0]?.end;
+  } catch (e) { out.edgar_xbrl_err = e.message; }
+
+  // Test 3: EDGAR XBRL capex for AAPL
+  try {
+    const r = await fetch(
+      'https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/PaymentsToAcquirePropertyPlantAndEquipment.json',
+      { headers: UA_SEC }
+    );
+    const d = await r.json();
+    const annual = (d?.units?.USD || []).filter(e => e.form === '10-K').sort((a, b) => b.end.localeCompare(a.end));
+    out.edgar_aapl_capex = annual[0]?.val;
+  } catch (e) { out.edgar_capex_err = e.message; }
+
+  // Test 4: Stooq price for AAPL
+  try {
+    const r = await fetch('https://stooq.com/q/d/l/?s=aapl.us&i=d', { headers: UA_PLAIN });
+    const text = await r.text();
+    const lines = text.trim().split('\n');
+    const last = lines[lines.length - 1].split(',');
+    out.stooq_ok           = r.ok && last.length >= 5;
+    out.stooq_aapl_date    = last[0];
+    out.stooq_aapl_close   = parseFloat(last[4]);
+  } catch (e) { out.stooq_err = e.message; }
+
+  // Test 5: Stooq price for Nordic (Oslo Bors)
+  try {
+    const r = await fetch('https://stooq.com/q/d/l/?s=bouvet.ol&i=d', { headers: UA_PLAIN });
+    const text = await r.text();
+    const lines = text.trim().split('\n');
+    const last = lines[lines.length - 1].split(',');
+    out.stooq_nordic_ok    = r.ok && last.length >= 5;
+    out.stooq_bouvet_close = parseFloat(last[4]);
+  } catch (e) { out.stooq_nordic_err = e.message; }
+
+  // Test 6: EDGAR EFTS (for catalyst scanner)
+  try {
+    const r = await fetch(
+      'https://efts.sec.gov/LATEST/search-index?forms=8-K&dateRange=custom&startdt=2026-05-01&enddt=2026-05-31&q=%22spinoff%22',
+      { headers: UA_SEC }
+    );
+    const d = await r.json();
+    out.edgar_efts_ok   = r.ok;
+    out.edgar_efts_hits = d?.hits?.total?.value ?? 0;
+  } catch (e) { out.edgar_efts_err = e.message; }
 
   return res.json(out);
 }
