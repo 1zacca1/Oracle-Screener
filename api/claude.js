@@ -1,12 +1,8 @@
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).end();
 
   const apiKey = req.headers['x-api-key'];
-  if (!apiKey) {
-    return res.status(400).json({ error: 'Missing x-api-key header' });
-  }
+  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' });
 
   try {
     const upstream = await fetch('https://api.anthropic.com/v1/messages', {
@@ -15,7 +11,6 @@ export default async function handler(req, res) {
         'content-type': 'application/json',
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'web-search-2025-03-05',
       },
       body: JSON.stringify(req.body),
     });
