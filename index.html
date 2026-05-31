@@ -679,7 +679,7 @@ async function callClaude(systemPrompt, userMsg, webSearch = true) {
   if (!apiKey) throw new Error('API key not set — go to Settings to add your Anthropic key.');
 
   const body = {
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-5',
     max_tokens: 2000,
     system: systemPrompt,
     messages: [{ role: 'user', content: userMsg }],
