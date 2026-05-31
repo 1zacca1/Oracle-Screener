@@ -709,7 +709,7 @@ async function callClaude(systemPrompt, userMsg, webSearch = true) {
 }
 
 function parseJSON(raw) {
-  const m = raw.match(/\[[\s\S]*?\]/);
+  const m = raw.match(/\[[\s\S]*\]/);
   if (!m) throw new Error('Could not find a JSON array in the response. Try running again.');
   try { return JSON.parse(m[0]); }
   catch { throw new Error('JSON parse failed. The model returned malformed JSON — try again.'); }
