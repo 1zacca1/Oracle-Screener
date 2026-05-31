@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Oracle Screener</title>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --surface: #ffffff;
+      --surface2: #f1f2f4;
+      --border: rgba(0,0,0,0.07);
+      --text: #111827;
+      --text2: #6b7280;
+      --accent: #4f46e5;
+      --accent-light: #eef2ff;
+      --accent-text: #4338ca;
+      --sidebar-w: 220px;
+      --radius: 9px;
+      --shadow: 0 1px 4px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.06);
+      --nordic-col: #2563eb;
+      --nordic-bg: #eff6ff;
+      --us-col: #0d9488;
+      --us-bg: #f0fdfa;
+      --red: #ef4444;
+      --green: #16a34a;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d0d12;
+        --surface: #16161f;
+        --surface2: #1e1e2a;
+        --border: rgba(255,255,255,0.07);
+        --text: #e8e8f0;
+        --text2: #8b8ba8;
+        --accent: #6366f1;
+        --accent-light: rgba(99,102,241,0.12);
+        --accent-text: #a5b4fc;
+        --shadow: 0 1px 4px rgba(0,0,0,0.4), 0 0 0 0.5px rgba(255,255,255,0.05);
+        --nordic-col: #60a5fa;
+        --nordic-bg: rgba(37,99,235,0.15);
+        --us-col: #2dd4bf;
+        --us-bg: rgba(13,148,136,0.15);
+        --red: #f87171;
+        --green: #4ade80;
+      }
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: var(--sidebar-w);
+      min-width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 0.5px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    .logo {
+      padding: 20px 18px 16px;
+      border-bottom: 0.5px solid var(--border);
+    }
+    .logo-mark {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .logo-mark svg { color: var(--accent); }
+    .logo-sub {
+      font-size: 11px;
+      color: var(--text2);
+      margin-top: 3px;
+      padding-left: 25px;
+    }
+    nav { flex: 1; padding: 8px 0; overflow-y: auto; }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 18px 8px 15px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text2);
+      border-left: 3px solid transparent;
+      user-select: none;
+      transition: background 0.12s, color 0.12s;
+    }
+    .nav-item:hover { background: var(--surface2); color: var(--text); }
+    .nav-item.active {
+      border-left-color: var(--accent);
+      background: var(--accent-light);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .nav-icon { width: 16px; text-align: center; font-size: 13px; opacity: 0.8; }
+    .api-status {
+      padding: 14px 18px;
+      border-top: 0.5px solid var(--border);
+    }
+    .api-status-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text2); margin-bottom: 5px; }
+    .api-indicator { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; }
+    .api-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+    .api-dot.set { background: var(--green); }
+
+    /* ── Main ── */
+    .main { flex: 1; overflow-y: auto; padding: 36px 40px; }
+    .module { display: none; max-width: 860px; }
+    .module.active { display: block; }
+    .module-title { font-size: 22px; font-weight: 800; letter-spacing: -0.6px; margin-bottom: 5px; }
+    .module-sub { font-size: 13px; color: var(--text2); margin-bottom: 28px; }
+
+    /* ── Cards / Controls ── */
+    .card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 20px;
+    }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .full { grid-column: 1 / -1; }
+    .field-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text2);
+      margin-bottom: 6px;
+    }
+    .slider-row { display: flex; align-items: center; gap: 10px; }
+    input[type=range] { flex: 1; accent-color: var(--accent); cursor: pointer; }
+    .sval { font-size: 13px; font-weight: 700; color: var(--accent); min-width: 38px; text-align: right; }
+    select, input[type=text], input[type=password], textarea {
+      background: var(--surface2);
+      border: 0.5px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 11px;
+      font-size: 13px;
+      color: var(--text);
+      width: 100%;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    select:focus, input:focus, textarea:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 44px; }
+
+    /* Pills */
+    .pills { display: flex; flex-wrap: wrap; gap: 7px; }
+    .pill {
+      padding: 5px 13px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 0.5px solid var(--border);
+      background: var(--surface2);
+      color: var(--text2);
+      user-select: none;
+      transition: background 0.12s, color 0.12s, border-color 0.12s;
+    }
+    .pill.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 18px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      transition: opacity 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { opacity: 0.88; }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-ghost { background: var(--surface2); color: var(--text); border: 0.5px solid var(--border); }
+    .btn-ghost:hover { background: var(--border); }
+    .btn-danger { background: rgba(239,68,68,0.1); color: var(--red); border: 0.5px solid rgba(239,68,68,0.25); }
+    .btn-danger:hover { background: rgba(239,68,68,0.18); }
+    .run-row { display: flex; align-items: center; gap: 12px; margin-top: 20px; padding-top: 18px; border-top: 0.5px solid var(--border); }
+    .run-hint { font-size: 12px; color: var(--text2); }
+
+    /* Loading */
+    .loading { display: none; align-items: center; gap: 14px; padding: 20px 22px; }
+    .loading.vis { display: flex; }
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-msg { font-size: 13px; color: var(--text2); }
+
+    /* Error */
+    .err { display: none; padding: 14px 18px; border-radius: var(--radius); background: rgba(239,68,68,0.08); border: 0.5px solid rgba(239,68,68,0.3); color: var(--red); font-size: 13px; margin-bottom: 18px; }
+    .err.vis { display: block; }
+
+    /* Idea cards */
+    .results { display: grid; gap: 14px; }
+    .idea-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      box-shadow: var(--shadow);
+    }
+    .card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 2px; }
+    .card-ident { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+    .ticker { font-size: 17px; font-weight: 800; letter-spacing: -0.4px; }
+    .exch { font-size: 11px; color: var(--text2); font-weight: 500; }
+    .badge {
+      font-size: 10px; font-weight: 700; padding: 2px 8px;
+      border-radius: 100px; text-transform: uppercase; letter-spacing: 0.4px;
+    }
+    .b-nordic { background: var(--nordic-bg); color: var(--nordic-col); }
+    .b-us { background: var(--us-bg); color: var(--us-col); }
+    .b-spinoff  { background: rgba(217,119,6,0.12);  color: #b45309; }
+    .b-buyback  { background: rgba(13,148,136,0.12); color: #0d9488; }
+    .b-insider  { background: rgba(37,99,235,0.12);  color: #2563eb; }
+    .b-strategic{ background: rgba(220,38,38,0.12);  color: #dc2626; }
+    .b-mgmt     { background: rgba(107,114,128,0.12);color: #6b7280; }
+    .b-inflection{background: rgba(22,163,74,0.12);  color: #16a34a; }
+    .b-activist { background: rgba(220,38,38,0.12);  color: #dc2626; }
+    @media (prefers-color-scheme: dark) {
+      .b-spinoff  { background: rgba(217,119,6,0.2);  color: #fbbf24; }
+      .b-buyback  { background: rgba(13,148,136,0.2); color: #2dd4bf; }
+      .b-insider  { background: rgba(96,165,250,0.2); color: #60a5fa; }
+      .b-strategic{ background: rgba(248,113,113,0.2);color: #f87171; }
+      .b-mgmt     { background: rgba(156,163,175,0.15);color:#9ca3af; }
+      .b-inflection{background: rgba(74,222,128,0.15);color: #4ade80; }
+      .b-activist { background: rgba(248,113,113,0.2);color: #f87171; }
+    }
+    .co-name { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+    .tagline { font-size: 12.5px; color: var(--text2); margin-bottom: 13px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 13px; }
+    .chip {
+      background: var(--surface2); border: 0.5px solid var(--border);
+      border-radius: 6px; padding: 4px 10px; font-size: 11.5px;
+    }
+    .chip-label { color: var(--text2); }
+    .chip-val { font-weight: 700; }
+    .thesis { font-size: 13.5px; line-height: 1.68; margin-bottom: 12px; }
+    .verify-box {
+      font-size: 12.5px; color: var(--text2);
+      padding: 9px 13px; background: var(--surface2); border-radius: 6px;
+      border-left: 3px solid var(--accent); margin-bottom: 13px;
+    }
+    .verify-box strong { color: var(--text); }
+    .card-actions { display: flex; gap: 8px; }
+    .save-btn { font-size: 12px; padding: 6px 14px; }
+
+    /* Saved ideas */
+    .saved-list { display: grid; gap: 12px; }
+    .saved-row {
+      background: var(--surface); border: 0.5px solid var(--border);
+      border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow);
+    }
+    .saved-top { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 8px; }
+    .saved-date { font-size: 11px; color: var(--text2); margin-left: auto; }
+    .saved-summary { font-size: 12.5px; color: var(--text2); margin-bottom: 5px; }
+    .saved-metrics { font-size: 11.5px; color: var(--text2); margin-bottom: 10px; }
+    .notes-ta { font-size: 12.5px; margin-top: 10px; }
+
+    /* History */
+    .hist-list { display: grid; gap: 10px; }
+    .hist-row {
+      background: var(--surface); border: 0.5px solid var(--border);
+      border-radius: var(--radius); padding: 14px 18px;
+      display: flex; align-items: center; gap: 12px;
+      cursor: pointer; box-shadow: var(--shadow);
+      transition: border-color 0.15s;
+    }
+    .hist-row:hover { border-color: var(--accent); }
+    .hist-meta { flex: 1; }
+    .hist-module { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+    .hist-filters { font-size: 12px; color: var(--text2); }
+    .hist-date { font-size: 11px; color: var(--text2); text-align: right; white-space: nowrap; }
+    .hist-count {
+      font-size: 12px; font-weight: 700; color: var(--accent);
+      background: var(--accent-light); padding: 3px 10px; border-radius: 100px;
+      white-space: nowrap;
+    }
+
+    /* Weekly summary */
+    .brief-card {
+      background: var(--surface); border: 0.5px solid var(--border);
+      border-radius: var(--radius); padding: 28px 32px; box-shadow: var(--shadow);
+      margin-top: 20px;
+    }
+    .brief-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 22px; padding-bottom: 16px; border-bottom: 0.5px solid var(--border);
+    }
+    .brief-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text2); }
+    .brief-text { font-size: 14px; line-height: 1.82; white-space: pre-wrap; }
+
+    /* Settings */
+    .sett-section {
+      background: var(--surface); border: 0.5px solid var(--border);
+      border-radius: var(--radius); padding: 22px 24px; box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+    .sett-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text2); margin-bottom: 16px; }
+
+    /* Empty state */
+    .empty { text-align: center; padding: 56px 24px; color: var(--text2); }
+    .empty-icon { font-size: 28px; margin-bottom: 10px; opacity: 0.5; }
+    .empty-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+    .empty-sub { font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════ SIDEBAR ═══════════════ -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      </svg>
+      Oracle Screener
+    </div>
+    <div class="logo-sub">AI-powered idea generation</div>
+  </div>
+
+  <nav>
+    <div class="nav-item active" data-mod="screener">
+      <span class="nav-icon">⚡</span> Metric screener
+    </div>
+    <div class="nav-item" data-mod="catalyst">
+      <span class="nav-icon">🔍</span> Catalyst scanner
+    </div>
+    <div class="nav-item" data-mod="weekly">
+      <span class="nav-icon">📋</span> Weekly summary
+    </div>
+    <div class="nav-item" data-mod="saved">
+      <span class="nav-icon">★</span> Saved ideas
+    </div>
+    <div class="nav-item" data-mod="history">
+      <span class="nav-icon">⏱</span> Run history
+    </div>
+    <div class="nav-item" data-mod="settings">
+      <span class="nav-icon">⚙</span> Settings
+    </div>
+  </nav>
+
+  <div class="api-status">
+    <div class="api-status-label">Anthropic API</div>
+    <div class="api-indicator">
+      <div class="api-dot" id="apiDot"></div>
+      <span id="apiStatusText">Not set</span>
+    </div>
+  </div>
+</aside>
+
+<!-- ═══════════════ MAIN ═══════════════ -->
+<main class="main">
+
+  <!-- ── Module 1: Metric Screener ── -->
+  <div class="module active" id="mod-screener">
+    <div class="module-title">Metric Screener</div>
+    <div class="module-sub">Find undervalued stocks matching your quantitative criteria using AI-powered web search.</div>
+
+    <div class="card">
+      <div class="grid2">
+        <div>
+          <label class="field-label">Max EV / EBIT</label>
+          <div class="slider-row">
+            <input type="range" id="s-evebit" min="2" max="15" value="5" step="0.5">
+            <span class="sval" id="s-evebit-v">5x</span>
+          </div>
+        </div>
+        <div>
+          <label class="field-label">Min FCF Yield</label>
+          <div class="slider-row">
+            <input type="range" id="s-fcf" min="3" max="25" value="8" step="0.5">
+            <span class="sval" id="s-fcf-v">8%</span>
+          </div>
+        </div>
+        <div>
+          <label class="field-label">Min Insider Ownership</label>
+          <div class="slider-row">
+            <input type="range" id="s-insider" min="5" max="70" value="15" step="1">
+            <span class="sval" id="s-insider-v">15%</span>
+          </div>
+        </div>
+        <div>
+          <label class="field-label">Universe</label>
+          <select id="s-universe">
+            <option>Nordic + US</option>
+            <option>Nordic only</option>
+            <option>US only</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Market Cap</label>
+          <select id="s-mktcap">
+            <option>Any</option>
+            <option>Micro &lt;$250m</option>
+            <option>Small $250m–$2b</option>
+            <option>Mid $2b–$10b</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Inflection Type</label>
+          <select id="s-inflection">
+            <option>Any</option>
+            <option>Margin expanding</option>
+            <option>Revenue reaccelerating</option>
+            <option>FCF turning positive</option>
+          </select>
+        </div>
+        <div class="full">
+          <label class="field-label">Additional Focus</label>
+          <input type="text" id="s-focus" placeholder="e.g. Scandinavian industrials, net cash balance sheet">
+        </div>
+      </div>
+      <div class="run-row">
+        <button class="btn btn-primary" id="s-btn" onclick="runScreener()">Run screener</button>
+        <span class="run-hint">Takes 20–40 seconds</span>
+      </div>
+    </div>
+
+    <div class="card loading" id="s-load">
+      <div class="spinner"></div>
+      <div class="loading-msg">Scanning — this takes 20–40 seconds…</div>
+    </div>
+    <div class="err" id="s-err"></div>
+    <div class="results" id="s-results"></div>
+  </div>
+
+  <!-- ── Module 2: Catalyst Scanner ── -->
+  <div class="module" id="mod-catalyst">
+    <div class="module-title">Catalyst Scanner</div>
+    <div class="module-sub">Scan for real corporate events and inflections the market may be mispricing.</div>
+
+    <div class="card">
+      <div class="grid2">
+        <div class="full">
+          <label class="field-label">Event Types</label>
+          <div class="pills" id="c-pills">
+            <div class="pill on" data-val="Spinoffs/carve-outs">Spinoffs / carve-outs</div>
+            <div class="pill on" data-val="Significant buybacks">Significant buybacks</div>
+            <div class="pill on" data-val="Insider purchases">Insider purchases</div>
+            <div class="pill on" data-val="Strategic reviews/M&A">Strategic reviews / M&A</div>
+            <div class="pill on" data-val="Management changes">Management changes</div>
+            <div class="pill on" data-val="Core biz inflecting">Core biz inflecting</div>
+            <div class="pill on" data-val="Activist involvement">Activist involvement</div>
+          </div>
+        </div>
+        <div>
+          <label class="field-label">Universe</label>
+          <select id="c-universe">
+            <option>Nordic + US</option>
+            <option>Nordic only</option>
+            <option>US only</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Lookback Window</label>
+          <select id="c-lookback">
+            <option value="past 7 days">Past 7 days</option>
+            <option value="past 14 days">Past 14 days</option>
+            <option value="past 30 days">Past 30 days</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Market Cap</label>
+          <select id="c-mktcap">
+            <option>Any</option>
+            <option>Micro &lt;$250m</option>
+            <option>Small $250m–$2b</option>
+            <option>Mid $2b–$10b</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Sector Focus</label>
+          <input type="text" id="c-sector" placeholder="e.g. industrials, software, energy">
+        </div>
+      </div>
+      <div class="run-row">
+        <button class="btn btn-primary" id="c-btn" onclick="runCatalyst()">Run scanner</button>
+        <span class="run-hint">Takes 20–40 seconds</span>
+      </div>
+    </div>
+
+    <div class="card loading" id="c-load">
+      <div class="spinner"></div>
+      <div class="loading-msg">Scanning — this takes 20–40 seconds…</div>
+    </div>
+    <div class="err" id="c-err"></div>
+    <div class="results" id="c-results"></div>
+  </div>
+
+  <!-- ── Module 3: Weekly Summary ── -->
+  <div class="module" id="mod-weekly">
+    <div class="module-title">Weekly Summary</div>
+    <div class="module-sub">Generate a tight analyst brief from your saved ideas.</div>
+
+    <div class="card">
+      <div id="w-count" style="font-size:13px;color:var(--text2);margin-bottom:16px;"></div>
+      <button class="btn btn-primary" id="w-btn" onclick="runWeekly()">Generate weekly brief</button>
+    </div>
+
+    <div class="card loading" id="w-load">
+      <div class="spinner"></div>
+      <div class="loading-msg">Writing your weekly brief…</div>
+    </div>
+    <div class="err" id="w-err"></div>
+
+    <div class="brief-card" id="w-output" style="display:none">
+      <div class="brief-header">
+        <span class="brief-label">Weekly Investment Brief</span>
+        <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px" onclick="copyBrief(event)">Copy to clipboard</button>
+      </div>
+      <div class="brief-text" id="w-text"></div>
+    </div>
+  </div>
+
+  <!-- ── Module 4: Saved Ideas ── -->
+  <div class="module" id="mod-saved">
+    <div class="module-title">Saved Ideas</div>
+    <div class="module-sub">All saved ideas across sessions, with freetext notes.</div>
+    <div class="saved-list" id="saved-list"></div>
+  </div>
+
+  <!-- ── Module 5: Run History ── -->
+  <div class="module" id="mod-history">
+    <div class="module-title">Run History</div>
+    <div class="module-sub">Click any run to reload its results without hitting the API.</div>
+    <div class="hist-list" id="hist-list"></div>
+  </div>
+
+  <!-- ── Module 6: Settings ── -->
+  <div class="module" id="mod-settings">
+    <div class="module-title">Settings</div>
+    <div class="module-sub">Configure your API key and default preferences.</div>
+
+    <div class="sett-section">
+      <div class="sett-title">Anthropic API Key</div>
+      <div style="margin-bottom:14px">
+        <label class="field-label">API Key (stored in localStorage, never sent anywhere except api.anthropic.com)</label>
+        <input type="password" id="key-input" placeholder="sk-ant-api03-…">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="saveKey()">Save key</button>
+        <button class="btn btn-ghost" onclick="clearKey()">Clear</button>
+      </div>
+    </div>
+
+    <div class="sett-section">
+      <div class="sett-title">Default Preferences</div>
+      <div class="grid2" style="margin-bottom:16px">
+        <div>
+          <label class="field-label">Default Universe</label>
+          <select id="pref-uni">
+            <option>Nordic + US</option>
+            <option>Nordic only</option>
+            <option>US only</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Default Market Cap</label>
+          <select id="pref-mktcap">
+            <option>Any</option>
+            <option>Micro &lt;$250m</option>
+            <option>Small $250m–$2b</option>
+            <option>Mid $2b–$10b</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="savePrefs()">Save preferences</button>
+    </div>
+
+    <div class="sett-section">
+      <div class="sett-title">Data Management</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-danger" onclick="clearSaved()">Clear all saved ideas</button>
+        <button class="btn btn-danger" onclick="clearHistory()">Clear run history</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+'use strict';
+
+// ════════════════════════════════════════
+//  Storage helpers
+// ════════════════════════════════════════
+const K = { key:'oracle_key', saved:'oracle_saved', hist:'oracle_hist', prefs:'oracle_prefs' };
+const getKey   = () => localStorage.getItem(K.key) || '';
+const getSaved = () => JSON.parse(localStorage.getItem(K.saved) || '[]');
+const getHist  = () => JSON.parse(localStorage.getItem(K.hist)  || '[]');
+const getPrefs = () => JSON.parse(localStorage.getItem(K.prefs) || '{}');
+const putSaved = d  => localStorage.setItem(K.saved, JSON.stringify(d));
+const putHist  = d  => localStorage.setItem(K.hist,  JSON.stringify(d));
+
+// ════════════════════════════════════════
+//  Navigation
+// ════════════════════════════════════════
+document.querySelectorAll('.nav-item').forEach(el => {
+  el.addEventListener('click', () => {
+    const id = el.dataset.mod;
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.module').forEach(m => m.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('mod-' + id).classList.add('active');
+    if (id === 'saved')    renderSaved();
+    if (id === 'history')  renderHistory();
+    if (id === 'weekly')   updateWeeklyCount();
+    if (id === 'settings') loadSettings();
+  });
+});
+
+// ════════════════════════════════════════
+//  Slider labels
+// ════════════════════════════════════════
+function bindSlider(id, suffix) {
+  const el  = document.getElementById(id);
+  const lbl = document.getElementById(id + '-v');
+  const upd = () => lbl.textContent = el.value + suffix;
+  el.addEventListener('input', upd);
+  upd();
+}
+bindSlider('s-evebit', 'x');
+bindSlider('s-fcf',    '%');
+bindSlider('s-insider','%');
+
+// ════════════════════════════════════════
+//  Catalyst pills
+// ════════════════════════════════════════
+document.querySelectorAll('#c-pills .pill').forEach(p =>
+  p.addEventListener('click', () => p.classList.toggle('on'))
+);
+
+// ════════════════════════════════════════
+//  API status indicator
+// ════════════════════════════════════════
+function refreshApiStatus() {
+  const set = !!getKey();
+  document.getElementById('apiDot').classList.toggle('set', set);
+  document.getElementById('apiStatusText').textContent = set ? 'Key set' : 'Not set';
+}
+refreshApiStatus();
+
+// ════════════════════════════════════════
+//  Core API call
+// ════════════════════════════════════════
+async function callClaude(systemPrompt, userMsg, webSearch = true) {
+  const apiKey = getKey();
+  if (!apiKey) throw new Error('API key not set — go to Settings to add your Anthropic key.');
+
+  const body = {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 2000,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMsg }],
+  };
+  if (webSearch) {
+    body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+  }
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-calls': 'true',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `API error ${res.status}`);
+  }
+
+  const data = await res.json();
+  const txt = data.content?.find(b => b.type === 'text')?.text;
+  if (!txt) throw new Error('No text in API response — the model may have only returned tool calls. Try again.');
+  return txt;
+}
+
+function parseJSON(raw) {
+  const m = raw.match(/\[[\s\S]*?\]/);
+  if (!m) throw new Error('Could not find a JSON array in the response. Try running again.');
+  try { return JSON.parse(m[0]); }
+  catch { throw new Error('JSON parse failed. The model returned malformed JSON — try again.'); }
+}
+
+// ════════════════════════════════════════
+//  Utilities
+// ════════════════════════════════════════
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function regionBadge(r) {
+  return r === 'nordic'
+    ? '<span class="badge b-nordic">Nordic</span>'
+    : '<span class="badge b-us">US</span>';
+}
+function eventBadgeClass(ev) {
+  const e = (ev || '').toLowerCase();
+  if (e.includes('spinoff') || e.includes('carve')) return 'b-spinoff';
+  if (e.includes('buyback'))   return 'b-buyback';
+  if (e.includes('insider'))   return 'b-insider';
+  if (e.includes('strategic') || e.includes('m&a')) return 'b-strategic';
+  if (e.includes('activist'))  return 'b-activist';
+  if (e.includes('inflect') || e.includes('core')) return 'b-inflection';
+  return 'b-mgmt';
+}
+function setLoading(prefix, on) {
+  document.getElementById(prefix+'-load').classList.toggle('vis', on);
+  const btn = document.getElementById(prefix+'-btn');
+  if (btn) btn.disabled = on;
+}
+function setError(prefix, msg) {
+  const el = document.getElementById(prefix+'-err');
+  el.textContent = msg;
+  el.classList.toggle('vis', !!msg);
+}
+
+// ════════════════════════════════════════
+//  History helpers
+// ════════════════════════════════════════
+function pushHistory(module, params, ideas) {
+  const hist = getHist();
+  const summary = Object.entries(params)
+    .map(([k,v]) => `${k}: ${v}`)
+    .join(' · ')
+    .slice(0, 140);
+  hist.unshift({ id: Date.now(), module, params, summary, count: ideas.length, results: ideas, at: new Date().toISOString() });
+  if (hist.length > 50) hist.length = 50;
+  putHist(hist);
+}
+
+// ════════════════════════════════════════
+//  MODULE 1 — Metric Screener
+// ════════════════════════════════════════
+async function runScreener() {
+  const p = {
+    universe:   document.getElementById('s-universe').value,
+    mktcap:     document.getElementById('s-mktcap').value,
+    ev_ebit:    document.getElementById('s-evebit').value + 'x',
+    fcf_yield:  document.getElementById('s-fcf').value + '%',
+    insider_own:document.getElementById('s-insider').value + '%',
+    inflection: document.getElementById('s-inflection').value,
+    focus:      document.getElementById('s-focus').value.trim() || 'any',
+  };
+
+  setError('s', '');
+  setLoading('s', true);
+  document.getElementById('s-results').innerHTML = '';
+
+  const sys = `You are a senior buy-side equity analyst doing a weekly stock screening. Use web search to find real investable stocks that plausibly fit these criteria as of today. Universe: ${p.universe}. Market cap: ${p.mktcap}. Max EV/EBIT: ${p.ev_ebit}. Min FCF yield: ${p.fcf_yield}. Min insider ownership: ${p.insider_own}. Business inflection: ${p.inflection}. Additional focus: ${p.focus}. Find 4–5 real stocks. For each: ticker, exchange, company name, one-sentence business description, EV/EBIT estimate, FCF yield estimate, insider ownership %, market cap, 3–4 sentence investment thesis (what the business does, why cheap relative to quality, what the inflection driver is, primary risk), and one key thing to verify before going deeper. Prioritise less-covered names. Note uncertainty honestly. Respond only as a raw JSON array with fields: ticker, exchange, name, tagline, ev_ebit, fcf_yield, insider_own, mktcap, thesis, verify, region (nordic or us).`;
+
+  try {
+    const raw   = await callClaude(sys, 'Run the screen now and return the JSON array.');
+    const ideas = parseJSON(raw);
+    pushHistory('Metric Screener', p, ideas);
+    renderScreenerResults(ideas, 's-results');
+  } catch (e) {
+    setError('s', e.message);
+  } finally {
+    setLoading('s', false);
+  }
+}
+
+function screenerCard(idea) {
+  return `<div class="idea-card">
+    <div class="card-top">
+      <div class="card-ident">
+        <span class="ticker">${esc(idea.ticker)}</span>
+        <span class="exch">${esc(idea.exchange)}</span>
+        ${regionBadge(idea.region)}
+      </div>
+    </div>
+    <div class="co-name">${esc(idea.name)}</div>
+    <div class="tagline">${esc(idea.tagline)}</div>
+    <div class="chips">
+      <div class="chip"><span class="chip-label">EV/EBIT </span><span class="chip-val">${esc(idea.ev_ebit)}</span></div>
+      <div class="chip"><span class="chip-label">FCF yield </span><span class="chip-val">${esc(idea.fcf_yield)}</span></div>
+      <div class="chip"><span class="chip-label">Insider own. </span><span class="chip-val">${esc(idea.insider_own)}</span></div>
+      <div class="chip"><span class="chip-label">Mkt cap </span><span class="chip-val">${esc(idea.mktcap)}</span></div>
+    </div>
+    <div class="thesis">${esc(idea.thesis)}</div>
+    <div class="verify-box"><strong>Key check:</strong> ${esc(idea.verify)}</div>
+    <div class="card-actions">
+      <button class="btn btn-ghost save-btn" data-saved="0">Save idea</button>
+    </div>
+  </div>`;
+}
+
+function renderScreenerResults(ideas, containerId) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = ideas.map(screenerCard).join('');
+  el.querySelectorAll('.save-btn').forEach((btn, i) => {
+    btn.addEventListener('click', () => {
+      saveIdea(ideas[i], 'screener');
+      btn.textContent = 'Saved ✓';
+      btn.disabled = true;
+    });
+  });
+}
+
+// ════════════════════════════════════════
+//  MODULE 2 — Catalyst Scanner
+// ════════════════════════════════════════
+async function runCatalyst() {
+  const selected = [...document.querySelectorAll('#c-pills .pill.on')].map(p => p.dataset.val);
+  if (!selected.length) { setError('c', 'Select at least one event type.'); return; }
+
+  const p = {
+    universe: document.getElementById('c-universe').value,
+    lookback: document.getElementById('c-lookback').value,
+    mktcap:   document.getElementById('c-mktcap').value,
+    sector:   document.getElementById('c-sector').value.trim() || 'any',
+    events:   selected.join(', '),
+  };
+
+  setError('c', '');
+  setLoading('c', true);
+  document.getElementById('c-results').innerHTML = '';
+
+  const sys = `You are a senior event-driven equity analyst. Use web search to scan for real corporate events and business inflections in the ${p.lookback}. Universe: ${p.universe}. Market cap: ${p.mktcap}. Sector: ${p.sector}. Event types to find: ${p.events}. Sources to check: SEC EDGAR (8-K, 13D/G, Form 4 filings), Oslo Bors/Newsweb announcements, Nasdaq Nordic disclosures, company press releases, financial news. Find 4–5 genuinely interesting setups — not routine announcements. For each: ticker, exchange, company name, event type, one-sentence event summary, 3–4 sentence thesis (what happened, why the market may be mispricing it, what the setup is, key risk), and one concrete next step for due diligence. Respond only as a raw JSON array with fields: ticker, exchange, name, event_type, event_summary, thesis, next_step, region (nordic or us).`;
+
+  try {
+    const raw   = await callClaude(sys, 'Scan for catalyst events now and return the JSON array.');
+    const ideas = parseJSON(raw);
+    pushHistory('Catalyst Scanner', p, ideas);
+    renderCatalystResults(ideas, 'c-results');
+  } catch (e) {
+    setError('c', e.message);
+  } finally {
+    setLoading('c', false);
+  }
+}
+
+function catalystCard(idea) {
+  const ec = eventBadgeClass(idea.event_type);
+  return `<div class="idea-card">
+    <div class="card-top">
+      <div class="card-ident">
+        <span class="ticker">${esc(idea.ticker)}</span>
+        <span class="exch">${esc(idea.exchange)}</span>
+        ${regionBadge(idea.region)}
+        <span class="badge ${ec}">${esc(idea.event_type)}</span>
+      </div>
+    </div>
+    <div class="co-name">${esc(idea.name)}</div>
+    <div class="tagline">${esc(idea.event_summary)}</div>
+    <div class="thesis">${esc(idea.thesis)}</div>
+    <div class="verify-box"><strong>Next step:</strong> ${esc(idea.next_step)}</div>
+    <div class="card-actions">
+      <button class="btn btn-ghost save-btn">Save idea</button>
+    </div>
+  </div>`;
+}
+
+function renderCatalystResults(ideas, containerId) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = ideas.map(catalystCard).join('');
+  el.querySelectorAll('.save-btn').forEach((btn, i) => {
+    btn.addEventListener('click', () => {
+      saveIdea(ideas[i], 'catalyst');
+      btn.textContent = 'Saved ✓';
+      btn.disabled = true;
+    });
+  });
+}
+
+// ════════════════════════════════════════
+//  MODULE 3 — Weekly Summary
+// ════════════════════════════════════════
+function updateWeeklyCount() {
+  const n = getSaved().length;
+  document.getElementById('w-count').textContent =
+    n ? `${n} saved idea${n !== 1 ? 's' : ''} ready to summarise.`
+      : 'No saved ideas yet — save ideas from the screeners first.';
+}
+
+async function runWeekly() {
+  const saved = getSaved();
+  if (!saved.length) { setError('w', 'No saved ideas to summarise.'); return; }
+
+  setError('w', '');
+  setLoading('w', true);
+  document.getElementById('w-output').style.display = 'none';
+
+  const sys = `You are a senior buy-side analyst writing a weekly investment brief. Here are this week's screened ideas: ${JSON.stringify(saved)}. Write a concise weekly brief covering: 1) A ranked shortlist of the top 3 ideas with one paragraph each explaining the thesis and why it stands out. 2) A 'what to dig into this week' section with 2–3 specific research tasks (e.g. read the last two earnings calls for X, check insider transaction history for Y). 3) One paragraph on any thematic pattern across the ideas. Write in tight, non-generic analyst prose. No bullet spam.`;
+
+  try {
+    const text = await callClaude(sys, 'Write the weekly investment brief now.', false);
+    document.getElementById('w-text').textContent = text;
+    document.getElementById('w-output').style.display = 'block';
+  } catch (e) {
+    setError('w', e.message);
+  } finally {
+    setLoading('w', false);
+  }
+}
+
+function copyBrief(e) {
+  const text = document.getElementById('w-text').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = e.target;
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = orig, 2000);
+  });
+}
+
+// ════════════════════════════════════════
+//  MODULE 4 — Saved Ideas
+// ════════════════════════════════════════
+function saveIdea(idea, module) {
+  const saved = getSaved();
+  if (saved.some(s => s.ticker === idea.ticker && s.module === module)) return;
+  saved.unshift({ ...idea, module, savedAt: new Date().toISOString(), notes: '' });
+  putSaved(saved);
+}
+
+function renderSaved() {
+  const saved = getSaved();
+  const el = document.getElementById('saved-list');
+  if (!saved.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">★</div><div class="empty-title">No saved ideas</div><div class="empty-sub">Save ideas from the Metric Screener or Catalyst Scanner.</div></div>`;
+    return;
+  }
+  el.innerHTML = saved.map((idea, i) => {
+    const date = new Date(idea.savedAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+    const evBadge = idea.event_type ? `<span class="badge ${eventBadgeClass(idea.event_type)}">${esc(idea.event_type)}</span>` : '';
+    const summary = esc(idea.tagline || idea.event_summary || '');
+    const metrics = idea.ev_ebit ? `EV/EBIT ${esc(idea.ev_ebit)} · FCF ${esc(idea.fcf_yield)} · Insider ${esc(idea.insider_own)}` : '';
+    return `<div class="saved-row">
+      <div class="saved-top">
+        <span class="ticker" style="font-size:15px">${esc(idea.ticker)}</span>
+        <span class="exch">${esc(idea.exchange)}</span>
+        ${regionBadge(idea.region)}
+        ${evBadge}
+        <strong style="font-size:13px">${esc(idea.name)}</strong>
+        <span class="saved-date">${date}</span>
+      </div>
+      ${summary ? `<div class="saved-summary">${summary}</div>` : ''}
+      ${metrics ? `<div class="saved-metrics">${metrics}</div>` : ''}
+      <textarea class="notes-ta" placeholder="Add notes…" rows="2" oninput="updateNote(this,${i})">${esc(idea.notes||'')}</textarea>
+      <div style="margin-top:10px">
+        <button class="btn btn-danger" style="font-size:12px;padding:5px 12px" onclick="removeIdea(${i})">Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateNote(el, i) {
+  const saved = getSaved();
+  if (saved[i]) { saved[i].notes = el.value; putSaved(saved); }
+}
+
+function removeIdea(i) {
+  const saved = getSaved();
+  saved.splice(i, 1);
+  putSaved(saved);
+  renderSaved();
+}
+
+// ════════════════════════════════════════
+//  MODULE 5 — Run History
+// ════════════════════════════════════════
+function renderHistory() {
+  const hist = getHist();
+  const el   = document.getElementById('hist-list');
+  if (!hist.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">⏱</div><div class="empty-title">No runs yet</div><div class="empty-sub">Run the screener or catalyst scanner to see history here.</div></div>`;
+    return;
+  }
+  el.innerHTML = hist.map(run => {
+    const date = new Date(run.at).toLocaleDateString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+    return `<div class="hist-row" onclick="replayRun(${run.id})">
+      <div class="hist-meta">
+        <div class="hist-module">${esc(run.module)}</div>
+        <div class="hist-filters">${esc(run.summary)}</div>
+      </div>
+      <span class="hist-count">${run.count} ideas</span>
+      <div class="hist-date">${date}</div>
+    </div>`;
+  }).join('');
+}
+
+function replayRun(id) {
+  const run = getHist().find(r => r.id === id);
+  if (!run) return;
+  const isScreener = run.module === 'Metric Screener';
+  const modKey     = isScreener ? 'screener' : 'catalyst';
+  document.querySelector(`[data-mod="${modKey}"]`).click();
+  setTimeout(() => {
+    if (isScreener) renderScreenerResults(run.results, 's-results');
+    else            renderCatalystResults(run.results, 'c-results');
+    document.getElementById(isScreener ? 's-results' : 'c-results')
+      .scrollIntoView({ behavior: 'smooth' });
+  }, 80);
+}
+
+// ════════════════════════════════════════
+//  MODULE 6 — Settings
+// ════════════════════════════════════════
+function loadSettings() {
+  const k = getKey();
+  if (k) document.getElementById('key-input').value = k;
+  const p = getPrefs();
+  if (p.universe) document.getElementById('pref-uni').value    = p.universe;
+  if (p.mktcap)   document.getElementById('pref-mktcap').value = p.mktcap;
+}
+
+function saveKey() {
+  const val = document.getElementById('key-input').value.trim();
+  if (!val) return alert('Please paste your API key first.');
+  localStorage.setItem(K.key, val);
+  refreshApiStatus();
+  alert('API key saved.');
+}
+
+function clearKey() {
+  localStorage.removeItem(K.key);
+  document.getElementById('key-input').value = '';
+  refreshApiStatus();
+}
+
+function savePrefs() {
+  const p = {
+    universe: document.getElementById('pref-uni').value,
+    mktcap:   document.getElementById('pref-mktcap').value,
+  };
+  localStorage.setItem(K.prefs, JSON.stringify(p));
+  // Apply to screener + catalyst selects
+  document.getElementById('s-universe').value = p.universe;
+  document.getElementById('c-universe').value = p.universe;
+  document.getElementById('s-mktcap').value   = p.mktcap;
+  document.getElementById('c-mktcap').value   = p.mktcap;
+  alert('Preferences saved.');
+}
+
+function clearSaved() {
+  if (!confirm('Delete all saved ideas? This cannot be undone.')) return;
+  localStorage.removeItem(K.saved);
+  alert('Saved ideas cleared.');
+}
+
+function clearHistory() {
+  if (!confirm('Delete all run history? This cannot be undone.')) return;
+  localStorage.removeItem(K.hist);
+  alert('Run history cleared.');
+}
+
+// ════════════════════════════════════════
+//  Startup: apply saved preferences
+// ════════════════════════════════════════
+(function init() {
+  const p = getPrefs();
+  if (p.universe) {
+    document.getElementById('s-universe').value = p.universe;
+    document.getElementById('c-universe').value = p.universe;
+  }
+  if (p.mktcap) {
+    document.getElementById('s-mktcap').value = p.mktcap;
+    document.getElementById('c-mktcap').value = p.mktcap;
+  }
+})();
+</script>
+</body>
+</html>
