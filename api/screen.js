@@ -1,18 +1,19 @@
 const FMP = 'https://financialmodelingprep.com/api';
 
-const NORDIC = ['OSLO', 'STO', 'CPH', 'HEL'];
+// FMP exchange codes (verified)
+const NORDIC = ['OSE', 'STO', 'CSE', 'HEL'];
 const US     = ['NYSE', 'NASDAQ'];
 
 function getExchanges(universe) {
   if (universe === 'Nordic only') return NORDIC;
   if (universe === 'US only')     return US;
-  return [...NORDIC, ...US];
+  return [...US, ...NORDIC]; // US first — better FMP coverage
 }
 
 function parseMktCap(mktcap) {
-  if (mktcap?.includes('Micro'))  return { min: 10_000_000,     max: 250_000_000   };
-  if (mktcap?.includes('Small'))  return { min: 250_000_000,    max: 2_000_000_000 };
-  if (mktcap?.includes('Mid'))    return { min: 2_000_000_000,  max: 10_000_000_000};
+  if (mktcap?.includes('Micro'))  return { min: 10_000_000,    max: 250_000_000   };
+  if (mktcap?.includes('Small'))  return { min: 250_000_000,   max: 2_000_000_000 };
+  if (mktcap?.includes('Mid'))    return { min: 2_000_000_000, max: 10_000_000_000};
   return { min: 50_000_000, max: null };
 }
 
@@ -22,25 +23,30 @@ function fmtMktCap(v) {
   return `$${(v / 1e6).toFixed(0)}m`;
 }
 
-async function screenerPage(exchange, min, max, key) {
-  const p = new URLSearchParams({
-    exchange,
-    isActivelyTrading: 'true',
-    isEtf: 'false',
-    limit: '50',
-    apikey: key,
-  });
-  if (min) p.set('marketCapMoreThan', String(min));
-  if (max) p.set('marketCapLessThan', String(max));
-  const r = await fetch(`${FMP}/v3/stock-screener?${p}`);
+async function fmpGet(url) {
+  const r = await fetch(url);
+  if (!r.ok) return null;
   const d = await r.json();
-  return Array.isArray(d) ? d : [];
+  return d;
 }
 
-async function keyMetrics(symbol, key) {
-  const r = await fetch(`${FMP}/v3/key-metrics-ttm/${symbol}?apikey=${key}`);
-  const d = await r.json();
-  return Array.isArray(d) && d.length ? d[0] : null;
+async function fetchCandidates(exchanges, min, max, key) {
+  const all = [];
+  for (const exchange of exchanges) {
+    const p = new URLSearchParams({ exchange, isActivelyTrading: 'true', isEtf: 'false', limit: '50', apikey: key });
+    if (min) p.set('marketCapMoreThan', String(min));
+    if (max) p.set('marketCapLessThan', String(max));
+    const data = await fmpGet(`${FMP}/v3/stock-screener?${p}`);
+    if (Array.isArray(data)) all.push(...data);
+  }
+  // Deduplicate by symbol
+  return [...new Map(all.map(s => [s.symbol, s])).values()];
+}
+
+async function fetchMetrics(symbol, key) {
+  const data = await fmpGet(`${FMP}/v3/key-metrics-ttm/${symbol}?apikey=${key}`);
+  if (!Array.isArray(data) || !data.length) return null;
+  return data[0];
 }
 
 export default async function handler(req, res) {
@@ -51,55 +57,76 @@ export default async function handler(req, res) {
 
   const { universe, mktcap, ev_ebit, fcf_yield, insider_own, inflection, focus } = req.body;
 
-  const exchanges   = getExchanges(universe);
+  const exchanges    = getExchanges(universe);
   const { min, max } = parseMktCap(mktcap);
   const maxEvEbitda  = parseFloat(ev_ebit)   || 5;
-  const minFcfYield  = (parseFloat(fcf_yield) || 8) / 100;
+  const minFcfYield  = (parseFloat(fcf_yield) || 3) / 100;
 
-  // 1 — Pull candidates from each exchange in parallel
-  const pages = await Promise.allSettled(exchanges.map(e => screenerPage(e, min, max, key)));
-  const all   = pages.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
+  // 1 — Get candidates (sequential per exchange to avoid FMP rate limits)
+  const candidates = await fetchCandidates(exchanges, min, max, key);
+  if (!candidates.length) {
+    return res.json({ stocks: [], debug: 'No candidates returned from FMP screener' });
+  }
 
-  // Deduplicate, then take a random slice of 25 to stay within Vercel timeout
-  const unique = [...new Map(all.map(s => [s.symbol, s])).values()];
-  const sample = unique.sort(() => Math.random() - 0.5).slice(0, 25);
+  // Shuffle for variety, cap at 20 to stay within Vercel's 10s timeout
+  const sample = candidates.sort(() => Math.random() - 0.5).slice(0, 20);
 
-  if (!sample.length) return res.json({ stocks: [] });
+  // 2 — Fetch key metrics in parallel (20 calls)
+  const metricsResults = await Promise.allSettled(
+    sample.map(s => fetchMetrics(s.symbol, key))
+  );
 
-  // 2 — Fetch key metrics for each candidate in parallel
-  const enriched = await Promise.allSettled(
-    sample.map(async s => {
-      const m = await keyMetrics(s.symbol, key);
+  const enriched = sample
+    .map((s, i) => {
+      const m = metricsResults[i].status === 'fulfilled' ? metricsResults[i].value : null;
       return m ? { ...s, metrics: m } : null;
     })
-  );
+    .filter(Boolean);
 
-  const valid = enriched
-    .filter(r => r.status === 'fulfilled' && r.value)
-    .map(r => r.value);
-
-  // 3 — Filter by EV/EBITDA and FCF yield
-  const filtered = valid.filter(s => {
+  // 3 — Score and filter
+  // Primary: EV/EBITDA and FCF yield
+  // Fallback: just EV/EBITDA if nothing passes both
+  const passedBoth = enriched.filter(s => {
     const ev  = s.metrics.enterpriseValueOverEBITDATTM;
     const fcf = s.metrics.freeCashFlowYieldTTM;
-    return ev > 0 && ev <= maxEvEbitda && fcf >= minFcfYield;
+    return ev != null && ev > 0 && ev <= maxEvEbitda
+        && fcf != null && fcf >= minFcfYield;
   });
 
-  filtered.sort((a, b) =>
-    a.metrics.enterpriseValueOverEBITDATTM - b.metrics.enterpriseValueOverEBITDATTM
+  const passedEv = enriched.filter(s => {
+    const ev = s.metrics.enterpriseValueOverEBITDATTM;
+    return ev != null && ev > 0 && ev <= maxEvEbitda;
+  });
+
+  const pool = passedBoth.length >= 3 ? passedBoth : passedEv;
+
+  pool.sort((a, b) =>
+    (a.metrics.enterpriseValueOverEBITDATTM ?? 999) -
+    (b.metrics.enterpriseValueOverEBITDATTM ?? 999)
   );
 
-  // 4 — Shape output for the frontend / Claude
-  const stocks = filtered.slice(0, 8).map(s => ({
+  const stocks = pool.slice(0, 8).map(s => ({
     ticker:    s.symbol,
-    exchange:  s.exchangeShortName || s.exchange,
+    exchange:  s.exchangeShortName || s.exchange || '',
     name:      s.companyName,
     mktcap:    fmtMktCap(s.marketCap),
-    ev_ebitda: s.metrics.enterpriseValueOverEBITDATTM?.toFixed(1) + 'x',
-    fcf_yield: (s.metrics.freeCashFlowYieldTTM * 100).toFixed(1) + '%',
-    pe:        s.metrics.peRatioTTM?.toFixed(1) ?? 'N/A',
+    ev_ebitda: s.metrics.enterpriseValueOverEBITDATTM != null
+      ? s.metrics.enterpriseValueOverEBITDATTM.toFixed(1) + 'x'
+      : 'N/A',
+    fcf_yield: s.metrics.freeCashFlowYieldTTM != null
+      ? (s.metrics.freeCashFlowYieldTTM * 100).toFixed(1) + '%'
+      : 'N/A',
+    pe:        s.metrics.peRatioTTM != null ? s.metrics.peRatioTTM.toFixed(1) : 'N/A',
     region:    NORDIC.includes(s.exchangeShortName || s.exchange) ? 'nordic' : 'us',
   }));
 
-  return res.json({ stocks, filters: { universe, mktcap, ev_ebit, fcf_yield, insider_own, inflection, focus } });
+  return res.json({
+    stocks,
+    debug: {
+      candidates: candidates.length,
+      enriched: enriched.length,
+      passedBoth: passedBoth.length,
+      passedEvOnly: passedEv.length,
+    },
+  });
 }
