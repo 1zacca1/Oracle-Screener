@@ -104,7 +104,7 @@ const GNW_COUNTRY = {
   Canada:     'Canada',
 };
 
-async function globeNewswireFeed(exchange, limit = 20) {
+async function globeNewswireFeed(exchange, limit = 50) {
   const country = GNW_COUNTRY[exchange];
   if (!country) return [];
   const url = `https://www.globenewswire.com/RssFeed/country/${encodeURIComponent(country)}`;
@@ -141,18 +141,45 @@ async function globeNewswireFeed(exchange, limit = 20) {
 const NOISE_FILTER = /\b(results|earnings|revenue|quarterly|annual report|full.year|half.year|interim report|financial results|årsrapport|halvårsrapport|kvartalsrapport|delårsrapport|resultat|omsætning|liikevaihto|annual general meeting|general meeting|\bagm\b|\begm\b|extraordinary general|prospectus|notice of meeting|notice to shareholders|insider list|disclosure of major|voting rights|total voting|share capital change|generalforsamling|ordinær generalforsamling|government bond|treasury bill|riksbank|central bank|auction result|etf|etp|index provider|index change|underlying price|market act|chapter \d+|section \d+)\b/i;
 
 const CATEGORIES = [
-  { label: 'Insider Purchase',      pat: /insider.buy|insider.purchas|director.buy|bought.+shares?|acqui\w+.+shares?.+open.market/i },
-  { label: 'Insider Sale',          pat: /insider.sal|director.sal|sold.+shares?.+open.market/i },
-  { label: 'Share Buyback',         pat: /repurchas|buyback|buy.?back|share.purchas|aktietilbage|återköp|tilbakekjøp/i },
-  { label: 'Spinoff / Carve-out',   pat: /spin.?off|carve.?out|demerger|separation|split.?off|utskillelse|spinoff/i },
-  { label: 'M&A',                   pat: /acqui\w+|merger|takeover|acquisition|bid|tender.offer|definitive.agree|kombinasjon|fusjon|sammenslutn/i },
-  { label: 'Strategic Review',      pat: /strategic.review|strategic.alternative|exploring.option|sale.process|put.up.for.sale/i },
-  { label: 'Activist',              pat: /activist|sc.13d|significant.stake|stake.in|position.in|disclosed.+interest/i },
-  { label: 'Management Change',     pat: /appoint|new.ceo|new.cfo|new.chief|resign|step.down|interim.ceo|administrerende|direktør|styreleder/i },
-  { label: 'Capital Raise',         pat: /rights.issue|private.placement|share.issue|capital.raise|equity.offer|emission|kapitalforhøjelse|rettet.emissjon/i },
-  { label: 'Clinical / Regulatory', pat: /phase [123]|clinical.trial|fda|ema.approv|regulatory.approv|data.read.?out|patient|efficacy/i },
-  { label: 'Partnership / JV',      pat: /partnership|joint.venture|collaboration|licens|strategic.agreement|samarbeidsavtale/i },
-  { label: 'Contract / Order',      pat: /contract|order.win|awarded|letter.of.intent|framework.agree|rammeavtale/i },
+  // Insider transactions
+  { label: 'Insider Purchase',
+    pat: /insider.buy|insider.purchas|director.buy|bought.+shares?|acqui\w+.+shares?.+open.market|kjøpte aksjer|kjøp av aksjer|ervervet aksjer|tegnet aksjer|köpt aktier|erlagt aktier|aktier købt/i },
+  { label: 'Insider Sale',
+    pat: /insider.sal|director.sal|sold.+shares?.+open.market|solgte aksjer|salg av aksjer|sålt aktier/i },
+
+  // Buybacks
+  { label: 'Share Buyback',
+    pat: /repurchas|buyback|buy.?back|share.purchas|aktietilbage|återköp|tilbakekjøp|takaisinostot|own.share.purchas|treasury.share/i },
+
+  // Corporate structure
+  { label: 'Spinoff / Carve-out',
+    pat: /spin.?off|carve.?out|demerger|separation|split.?off|utskillelse|spinoff|fisjon|avknoppning|utskillen/i },
+  { label: 'M&A',
+    pat: /acqui\w+|merger|takeover|acquisition|bid|tender.offer|definitive.agree|kombinasjon|fusjon|sammenslutn|oppkjøp|overtagelse|förvärv|förvärvar|overtager|opkøb|yrityskauppa|ostaa|hankinta/i },
+  { label: 'Strategic Review',
+    pat: /strategic.review|strategic.alternative|exploring.option|sale.process|put.up.for.sale|strategisk gjennomgang|salg av virksomhet|avhendelse|strategisk oversyn|strategisk granskning/i },
+
+  // Activist
+  { label: 'Activist',
+    pat: /activist|sc.13d|significant.stake|stake.in|position.in|disclosed.+interest|stor.eierandel|vesentlig eierandel/i },
+
+  // Management
+  { label: 'Management Change',
+    pat: /appoint|new.ceo|new.cfo|new.chief|resign|step.down|interim.ceo|administrerende direktør|ny (ceo|cfo|sjef|direktør)|tiltrer|fratrer|konstituert|utnevner|utnevnt|ansetter|ny vd|ny verkställande|vd.byte|avgår|tillsätter|utnämner|ny topp|topp.bytte|toppledarskifte/i },
+
+  // Capital markets
+  { label: 'Capital Raise',
+    pat: /rights.issue|private.placement|share.issue|capital.raise|equity.offer|emission|kapitalforhøjelse|rettet.emissjon|fortrinnsrettsemisjon|emisjon|emissjon|aktieemission|nyemission|osakeanti|antia|riktad.emission/i },
+
+  // Clinical / Regulatory
+  { label: 'Clinical / Regulatory',
+    pat: /phase [123]|clinical.trial|fda|ema.approv|regulatory.approv|data.read.?out|patient|efficacy|klinisk|godkjenning|godkjent|regulatorisk|markedsføringstillatelse/i },
+
+  // Partnerships / Contracts
+  { label: 'Partnership / JV',
+    pat: /partnership|joint.venture|collaboration|licens|strategic.agreement|samarbeidsavtale|samarbeid|partnerskap|samarbetsavtal|yhteistyösopimus/i },
+  { label: 'Contract / Order',
+    pat: /contract|order.win|awarded|letter.of.intent|framework.agree|rammeavtale|kontrakt|ordre|bestilling|tildelt|tildeler|tildelst|rammekontrakt|leveranseavtale|tildelar/i },
 ];
 
 function classifyEvent(text) {
@@ -175,12 +202,18 @@ function feedItemToFiling(item, region) {
   // Drop by subject first (most reliable signal)
   if (item.subjects?.some(s => NOISE_SUBJECTS.has(s.toLowerCase()))) return null;
 
-  // Then drop by keyword pattern in title + description + keywords
-  const searchText = `${item.title} ${item.description || ''} ${(item.keywords || []).join(' ')}`
-  if (NOISE_FILTER.test(searchText)) return null;
+  const searchText = `${item.title} ${item.description || ''} ${(item.keywords || []).join(' ')}`;
+  // Classify first — a strong category match overrides noise filter
   const event_type = classifyEvent(searchText) || classifyEvent((item.subjects || []).join(' '));
-  // Drop items that don't match any meaningful category — unclassified noise
-  if (event_type === 'Announcement') return null;
+  if (event_type === 'Announcement') {
+    // No category match — apply noise filter to decide if it's junk
+    if (NOISE_FILTER.test(searchText)) return null;
+    // Still no category and no clear noise signal — drop it
+    return null;
+  }
+  // Has a category — still drop obvious financial-results noise by title only
+  const HARD_NOISE = /\b(årsrapport|halvårsrapport|kvartalsrapport|delårsrapport|annual report|interim report|financial results|earnings release|quarterly results|full.year results|annual general meeting|prospectus|\bagm\b|\begm\b|generalforsamling)\b/i;
+  if (HARD_NOISE.test(item.title)) return null;
   const name = item.company || item.title.split(/\s+(announces?|–|-)\s+/i)[0]?.trim() || item.title;
   return {
     name,
@@ -301,5 +334,5 @@ export default async function handler(req, res) {
     ticker: f.region === 'us' ? (findTicker(_entity || f.name, tickerMap) || null) : null,
   }));
 
-  return res.json({ filings: filings.slice(0, 50), start, end, total: filings.length });
+  return res.json({ filings: filings.slice(0, 100), start, end, total: filings.length });
 }
