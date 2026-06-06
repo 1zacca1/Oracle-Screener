@@ -987,23 +987,25 @@ async function runCatalyst() {
 
 function catalystCard(f) {
   const ec     = eventBadgeClass(f.event_type);
-  const name   = f.name   || f.entity || '—';
-  const ticker = f.ticker || f.sym    || '';
+  const name   = f.name || '—';
+  const ticker = f.ticker || '';
   const exch   = f.exchange || (f.region === 'us' ? 'US' : f.region === 'canada' ? 'TSX' : 'Nordic');
-  const date   = f.date   ? f.date.slice(0, 10) : '';
+  const date   = (f.date || '').slice(0, 10);
   return `<div class="idea-card">
     <div class="card-top">
       <div class="card-ident">
-        ${ticker ? `<span class="ticker">${esc(ticker)}</span>` : ''}
+        <span class="badge ${ec}">${esc(f.event_type || 'Announcement')}</span>
         <span class="exch">${esc(exch)}</span>
         ${regionBadge(f.region)}
-        <span class="badge ${ec}">${esc(f.event_type || f.form_type)}</span>
         ${date ? `<span style="margin-left:auto;font-size:11px;color:var(--text2)">${esc(date)}</span>` : ''}
       </div>
     </div>
-    <div class="co-name" style="font-size:16px;font-weight:700;margin-bottom:6px">${esc(name)}</div>
-    ${f.event_headline ? `<div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:4px">${esc(f.event_headline)}</div>` : ''}
-    ${f.event_summary && f.event_summary !== f.event_headline ? `<div class="tagline">${esc(f.event_summary)}</div>` : ''}
+    <div style="display:flex;align-items:baseline;gap:8px;margin:8px 0 4px">
+      <span class="co-name" style="font-size:15px;font-weight:700">${esc(name)}</span>
+      ${ticker ? `<span class="ticker" style="font-size:12px">${esc(ticker)}</span>` : ''}
+    </div>
+    ${f.headline ? `<div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:4px">${esc(f.headline)}</div>` : ''}
+    ${f.summary && f.summary !== f.headline ? `<div class="tagline">${esc(f.summary)}</div>` : ''}
     <div class="card-actions" style="margin-top:14px">
       <button class="btn btn-ghost save-btn">Save idea</button>
       <button class="btn btn-ghost pitch-btn" style="font-size:12px;padding:6px 14px">Generate pitch →</button>
@@ -1052,13 +1054,13 @@ async function generatePitch(idea, card) {
 2. Why this specific event is interesting from an investment angle — what it signals, what the market might be missing, and what the potential setup looks like.
 3. The 3–4 most important things to research before going deeper — name specific filings to pull, metrics to check, or earnings calls to read. Be honest about uncertainty.`;
 
-  const name    = idea.name || idea.entity || 'Unknown';
-  const ticker  = idea.ticker || idea.sym || '';
+  const name    = idea.name || 'Unknown';
+  const ticker  = idea.ticker || '';
   const exch    = idea.exchange || '';
-  const userMsg = `Company: ${name}${ticker ? ` (${ticker}` : ''}${exch ? `, ${exch})` : (ticker ? ')' : '')}
-Event type: ${idea.event_type || idea.form_type || ''}
-Event: ${idea.event_headline || idea.event_summary || idea.tagline || ''}
-Initial thesis: ${idea.thesis || ''}
+  const userMsg = `Company: ${name}${ticker ? ` (${ticker}, ` : ' ('}${exch})
+Event type: ${idea.event_type || ''}
+Event: ${idea.headline || idea.event_summary || idea.tagline || ''}
+Detail: ${idea.summary || idea.thesis || ''}
 
 Write the three-paragraph pitch now.`;
 
@@ -1139,15 +1141,16 @@ function renderSaved() {
   el.innerHTML = saved.map((idea, i) => {
     const date = new Date(idea.savedAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
     const evBadge = idea.event_type ? `<span class="badge ${eventBadgeClass(idea.event_type)}">${esc(idea.event_type)}</span>` : '';
-    const summary = esc(idea.tagline || idea.event_summary || '');
+    const summary = esc(idea.summary || idea.tagline || idea.event_summary || '');
     const metrics = idea.ev_ebit ? `EV/EBIT ${esc(idea.ev_ebit)} · FCF ${esc(idea.fcf_yield)} · Insider ${esc(idea.insider_own)}` : '';
+    const ticker  = idea.ticker || '';
     return `<div class="saved-row">
       <div class="saved-top">
-        <span class="ticker" style="font-size:15px">${esc(idea.ticker)}</span>
-        <span class="exch">${esc(idea.exchange)}</span>
+        ${ticker ? `<span class="ticker" style="font-size:15px">${esc(ticker)}</span>` : ''}
+        <span class="exch">${esc(idea.exchange || '')}</span>
         ${regionBadge(idea.region)}
         ${evBadge}
-        <strong style="font-size:13px">${esc(idea.name)}</strong>
+        <strong style="font-size:13px">${esc(idea.name || '')}</strong>
         <span class="saved-date">${date}</span>
       </div>
       ${summary ? `<div class="saved-summary">${summary}</div>` : ''}
