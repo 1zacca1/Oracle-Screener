@@ -4,6 +4,12 @@
 const EFTS = 'https://efts.sec.gov/LATEST/search-index';
 const UA   = { 'User-Agent': 'Oracle-Screener/1.0 contact@oracle-screener.app' };
 
+function fetchWithTimeout(url, opts = {}, ms = 6000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
+
 function lookbackDates(lookback) {
   const end  = new Date();
   const days = lookback?.includes('30') ? 30 : lookback?.includes('14') ? 14 : 7;
@@ -18,7 +24,7 @@ function lookbackDates(lookback) {
 // ── Ticker lookup ─────────────────────────────────────────────────────────────
 async function buildTickerMap() {
   try {
-    const r = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: UA });
+    const r = await fetchWithTimeout('https://www.sec.gov/files/company_tickers.json', { headers: UA });
     const d = await r.json();
     const map = new Map();
     for (const e of Object.values(d)) {
@@ -52,7 +58,7 @@ async function edgarSearch({ keywords = [], form, start, end, limit = 10 }) {
   const p = new URLSearchParams({ forms: form, dateRange: 'custom', startdt: start, enddt: end });
   if (keywords.length) p.set('q', keywords.map(k => `"${k}"`).join(' OR '));
   try {
-    const r = await fetch(`${EFTS}?${p}`, { headers: UA });
+    const r = await fetchWithTimeout(`${EFTS}?${p}`, { headers: UA });
     if (!r.ok) return [];
     const d = await r.json();
     return (d.hits?.hits || []).slice(0, limit).map(h => ({
@@ -71,7 +77,7 @@ async function getForm4Issuers(start, end, limit = 15) {
       action: 'getcurrent', type: '4', dateb: '', owner: 'include',
       count: String(limit * 3), output: 'atom',
     });
-    const r = await fetch(`https://www.sec.gov/cgi-bin/browse-edgar?${p}`, { headers: UA });
+    const r = await fetchWithTimeout(`https://www.sec.gov/cgi-bin/browse-edgar?${p}`, { headers: UA });
     const xml = await r.text();
     const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)];
     const results = [];
@@ -97,7 +103,7 @@ async function newswebOslo(start, end) {
   const headers = { 'User-Agent': 'Mozilla/5.0 (compatible; Oracle-Screener/1.0)' };
   for (const url of urls) {
     try {
-      const r = await fetch(url, { headers });
+      const r = await fetchWithTimeout(url, { headers });
       if (!r.ok) continue;
       const xml = await r.text();
       if (!xml.includes('<item>')) continue;
@@ -137,7 +143,7 @@ async function nasdaqNordicFeed(market, exchange, limit = 10) {
   ];
   for (const url of urls) {
     try {
-      const r = await fetch(url, {
+      const r = await fetchWithTimeout(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Oracle-Screener/1.0)' },
       });
       if (!r.ok) continue;
@@ -164,7 +170,7 @@ async function globeNewswireCanada(limit = 15) {
   ];
   for (const url of urls) {
     try {
-      const r = await fetch(url, { headers: { 'User-Agent': 'Oracle-Screener/1.0' } });
+      const r = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Oracle-Screener/1.0' } });
       if (!r.ok) continue;
       const xml = await r.text();
       if (!xml.includes('<item>') && !xml.includes('<entry>')) continue;
@@ -184,7 +190,7 @@ async function mfnFeed(limit = 10) {
   const urls = ['https://mfn.se/feeds/latest', 'https://mfn.se/rss'];
   for (const url of urls) {
     try {
-      const r = await fetch(url, { headers: { 'User-Agent': 'Oracle-Screener/1.0' } });
+      const r = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Oracle-Screener/1.0' } });
       if (!r.ok) continue;
       const xml = await r.text();
       if (!xml.includes('<item>') && !xml.includes('<entry>')) continue;
