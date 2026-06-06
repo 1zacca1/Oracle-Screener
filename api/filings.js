@@ -129,6 +129,31 @@ async function nasdaqNordicFeed(market, exchange, limit = 10) {
   return [];
 }
 
+// ── Canada: Globe Newswire RSS ────────────────────────────────────────────────
+// Globe Newswire is the primary press release wire for TSX-listed companies.
+// SEDAR+ has no public RSS/API as of 2025.
+async function globeNewswireCanada(limit = 15) {
+  const urls = [
+    'https://www.globenewswire.com/RssFeed/country/Canada',
+    'https://www.newswire.ca/en/rss/latest.rss',
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: { 'User-Agent': 'Oracle-Screener/1.0' } });
+      if (!r.ok) continue;
+      const xml = await r.text();
+      if (!xml.includes('<item>') && !xml.includes('<entry>')) continue;
+      const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+      if (!items.length) continue;
+      return items.slice(0, limit).map(m => {
+        const raw = tag => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
+        return { title: raw('title'), pubDate: raw('pubDate'), exchange: 'Canada' };
+      });
+    } catch { continue; }
+  }
+  return [];
+}
+
 // ── MFN (Modular Finance Nordic) ─────────────────────────────────────────────
 async function mfnFeed(limit = 10) {
   const urls = ['https://mfn.se/feeds/latest', 'https://mfn.se/rss'];
@@ -172,15 +197,19 @@ export default async function handler(req, res) {
     events    = [],
     lookback  = 'past 7 days',
     universe  = 'Nordic + US',
-    exchanges = ['US', 'Oslo', 'Stockholm', 'Copenhagen', 'Helsinki'],
+    exchanges = ['US', 'Canada', 'Oslo', 'Stockholm', 'Copenhagen', 'Helsinki'],
   } = req.body;
 
   const { start, end } = lookbackDates(lookback);
-  const inclUS     = universe !== 'Nordic only' && exchanges.includes('US');
-  const inclOslo   = universe !== 'US only'     && exchanges.includes('Oslo');
-  const inclSto    = universe !== 'US only'     && exchanges.includes('Stockholm');
-  const inclCph    = universe !== 'US only'     && exchanges.includes('Copenhagen');
-  const inclHel    = universe !== 'US only'     && exchanges.includes('Helsinki');
+  const notNordicOnly = universe !== 'Nordic only';
+  const notUSOnly     = universe !== 'US only';
+  const notCAOnly     = universe !== 'Canada only';
+  const inclUS     = notNordicOnly && notCAOnly  && exchanges.includes('US');
+  const inclCA     = notNordicOnly && notUSOnly  && exchanges.includes('Canada');
+  const inclOslo   = notUSOnly     && notCAOnly  && exchanges.includes('Oslo');
+  const inclSto    = notUSOnly     && notCAOnly  && exchanges.includes('Stockholm');
+  const inclCph    = notUSOnly     && notCAOnly  && exchanges.includes('Copenhagen');
+  const inclHel    = notUSOnly     && notCAOnly  && exchanges.includes('Helsinki');
   const inclNordic = inclOslo || inclSto || inclCph || inclHel;
 
   const raw   = [];
@@ -247,6 +276,13 @@ export default async function handler(req, res) {
     tasks.push(mfnFeed()
       .then(items => items.forEach(item =>
         raw.push(feedItemToFiling(item, 'nordic', 'Nordic Announcement'))
+      )));
+
+  // ── Canada: Globe Newswire ─────────────────────────────────────────────────
+  if (inclCA)
+    tasks.push(globeNewswireCanada()
+      .then(items => items.forEach(item =>
+        raw.push(feedItemToFiling(item, 'canada', 'Canada Announcement'))
       )));
 
   // Run filings + ticker map fetch in parallel

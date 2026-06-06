@@ -30,9 +30,16 @@ export default async function handler(req, res) {
     testFeed('nasdaq_helsinki',            'https://www.nasdaqomxnordic.com/feeds/news?market=helsinki'),
     testFeed('nasdaq_nordic_all',          'https://www.nasdaqomxnordic.com/feeds/news'),
 
-    // MFN (Modular Finance Nordic) — aggregates Nordic press releases
+    // MFN (Modular Finance Nordic)
     testFeed('mfn_latest',   'https://mfn.se/feeds/latest'),
     testFeed('mfn_rss',      'https://mfn.se/rss'),
+
+    // Canada — Globe Newswire (main Canadian press release wire, TSX companies)
+    testFeed('gnw_canada',          'https://www.globenewswire.com/RssFeed/country/Canada'),
+    testFeed('gnw_canada_financial','https://www.globenewswire.com/RssFeed/country/Canada&Industry=Financial%20Services'),
+    testFeed('gnw_canada_energy',   'https://www.globenewswire.com/RssFeed/country/Canada&Industry=Energy%20%26%20Natural%20Resources'),
+    testFeed('cnw_newswire',        'https://www.newswire.ca/en/rss/latest.rss'),
+    testFeed('tsx_notices',         'https://www.tsx.com/json/market-regulatory-notices'),
 
     // EDGAR EFTS (control — should always work)
     testFeed('edgar_efts',   `https://efts.sec.gov/LATEST/search-index?forms=8-K&dateRange=custom&startdt=${week}&enddt=${today}&q=%22spinoff%22`),
