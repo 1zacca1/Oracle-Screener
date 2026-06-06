@@ -708,11 +708,32 @@ bindSlider('s-fcf',    '%');
 bindSlider('s-insider','%');
 
 // ════════════════════════════════════════
-//  Catalyst pills
+//  Catalyst pills + universe sync
 // ════════════════════════════════════════
 document.querySelectorAll('#c-pills .pill, #c-exchange-pills .pill').forEach(p =>
   p.addEventListener('click', () => p.classList.toggle('on'))
 );
+
+const US_EXCHANGES      = ['US'];
+const CANADA_EXCHANGES  = ['Canada'];
+const NORDIC_EXCHANGES  = ['Oslo', 'Stockholm', 'Copenhagen', 'Helsinki'];
+const ALL_EXCHANGES     = [...US_EXCHANGES, ...CANADA_EXCHANGES, ...NORDIC_EXCHANGES];
+
+function setExchangePills(active) {
+  document.querySelectorAll('#c-exchange-pills .pill').forEach(p => {
+    p.classList.toggle('on', active.includes(p.dataset.val));
+  });
+}
+
+document.getElementById('c-universe').addEventListener('change', function () {
+  switch (this.value) {
+    case 'All markets':   setExchangePills(ALL_EXCHANGES);    break;
+    case 'Nordic + US':   setExchangePills([...US_EXCHANGES, ...NORDIC_EXCHANGES]); break;
+    case 'Nordic only':   setExchangePills(NORDIC_EXCHANGES); break;
+    case 'US only':       setExchangePills(US_EXCHANGES);     break;
+    case 'Canada only':   setExchangePills(CANADA_EXCHANGES); break;
+  }
+});
 
 // ════════════════════════════════════════
 //  API status indicator
@@ -935,59 +956,50 @@ async function runCatalyst() {
   document.getElementById('c-results').innerHTML = '';
 
   try {
-    // Step 1: Fetch real filings from EDGAR + Newsweb
     document.querySelector('#c-load .loading-msg').textContent = `Fetching filings from ${exchanges.join(', ')}…`;
-    const filingsRes = await fetch('/api/filings', {
+    const res = await fetch('/api/filings', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(p),
     });
-    const { filings = [], start, end } = await filingsRes.json();
+    const { filings = [], start, end } = await res.json();
 
     if (!filings.length) {
-      setError('c', 'No filings found for these criteria. Try a longer lookback window or different event types.');
+      setError('c', 'No filings found. Try a longer lookback window, more exchanges, or different event types.');
       return;
     }
 
-    // Step 2: Claude identifies the most interesting setups (~3-4k tokens, no web search)
-    document.querySelector('#c-load .loading-msg').textContent = `Found ${filings.length} filings — identifying best setups…`;
-
-    const apiKey = getKey();
-    if (!apiKey) throw new Error('API key not set — go to Settings.');
-
-    const sys = `You are a senior event-driven equity analyst. You have been given real corporate filings from SEC EDGAR and Oslo Bors covering ${start} to ${end}. From this list, identify the 4–5 most genuinely interesting setups for event-driven investors. Skip routine/boilerplate filings. Prioritise less-covered names and filings that suggest mispricing. For each: ticker (your best guess from the entity name — US exchange listing symbol), exchange (NYSE or NASDAQ for US; Oslo/Stockholm/etc for Nordic), company name, event type, 1-sentence event summary, 3–4 sentence thesis (what happened, why the market may be mispricing it, the setup, key risk), and one concrete next due-diligence step. Be honest if a ticker is uncertain. Return ONLY a raw JSON array with fields: ticker, exchange, name, event_type, event_summary, thesis, next_step, region.`;
-
-    const userMsg = `Here are the real filings. Return the JSON array of 4–5 best setups:\n${JSON.stringify(filings, null, 2)}`;
-
-    const raw   = await callClaude(sys, userMsg, false);
-    const ideas = parseJSON(raw);
-
-    pushHistory('Catalyst Scanner', { ...p, events: p.events.join(', ') }, ideas);
-    renderCatalystResults(ideas, 'c-results');
+    document.querySelector('#c-load .loading-msg').textContent = `Found ${filings.length} filings…`;
+    pushHistory('Catalyst Scanner', { ...p, events: p.events.join(', ') }, filings);
+    renderCatalystResults(filings, 'c-results');
   } catch (e) {
     setError('c', e.message);
   } finally {
-    document.querySelector('#c-load .loading-msg').textContent = 'Scanning — this takes 20–40 seconds…';
+    document.querySelector('#c-load .loading-msg').textContent = 'Fetching filings…';
     setLoading('c', false);
   }
 }
 
-function catalystCard(idea) {
-  const ec = eventBadgeClass(idea.event_type);
+function catalystCard(f) {
+  const ec     = eventBadgeClass(f.event_type);
+  const name   = f.name   || f.entity || '—';
+  const ticker = f.ticker || f.sym    || '';
+  const exch   = f.exchange || (f.region === 'us' ? 'US' : f.region === 'canada' ? 'TSX' : 'Nordic');
+  const date   = f.date   ? f.date.slice(0, 10) : '';
+  const summary = f.event_summary || f.form_type || '';
   return `<div class="idea-card">
     <div class="card-top">
       <div class="card-ident">
-        <span class="ticker">${esc(idea.ticker)}</span>
-        <span class="exch">${esc(idea.exchange)}</span>
-        ${regionBadge(idea.region)}
-        <span class="badge ${ec}">${esc(idea.event_type)}</span>
+        ${ticker ? `<span class="ticker">${esc(ticker)}</span>` : ''}
+        <span class="exch">${esc(exch)}</span>
+        ${regionBadge(f.region)}
+        <span class="badge ${ec}">${esc(f.event_type || f.form_type)}</span>
+        ${date ? `<span style="margin-left:auto;font-size:11px;color:var(--text2)">${esc(date)}</span>` : ''}
       </div>
     </div>
-    <div class="co-name">${esc(idea.name)}</div>
-    <div class="tagline">${esc(idea.event_summary)}</div>
-    <div class="thesis">${esc(idea.thesis)}</div>
-    <div class="verify-box"><strong>Next step:</strong> ${esc(idea.next_step)}</div>
-    <div class="card-actions">
+    <div class="co-name">${esc(name)}</div>
+    ${summary ? `<div class="tagline">${esc(summary)}</div>` : ''}
+    <div class="card-actions" style="margin-top:14px">
       <button class="btn btn-ghost save-btn">Save idea</button>
       <button class="btn btn-ghost pitch-btn" style="font-size:12px;padding:6px 14px">Generate pitch →</button>
     </div>
@@ -1035,10 +1047,13 @@ async function generatePitch(idea, card) {
 2. Why this specific event is interesting from an investment angle — what it signals, what the market might be missing, and what the potential setup looks like.
 3. The 3–4 most important things to research before going deeper — name specific filings to pull, metrics to check, or earnings calls to read. Be honest about uncertainty.`;
 
-  const userMsg = `Company: ${idea.name} (${idea.ticker}, ${idea.exchange})
-Event type: ${idea.event_type}
-Event summary: ${idea.event_summary}
-Initial thesis: ${idea.thesis}
+  const name    = idea.name || idea.entity || 'Unknown';
+  const ticker  = idea.ticker || idea.sym || '';
+  const exch    = idea.exchange || '';
+  const userMsg = `Company: ${name}${ticker ? ` (${ticker}` : ''}${exch ? `, ${exch})` : (ticker ? ')' : '')}
+Event type: ${idea.event_type || idea.form_type || ''}
+Event summary: ${idea.event_summary || idea.tagline || ''}
+Initial thesis: ${idea.thesis || ''}
 
 Write the three-paragraph pitch now.`;
 
