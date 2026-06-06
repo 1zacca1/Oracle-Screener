@@ -137,7 +137,7 @@ async function globeNewswireFeed(exchange, limit = 20) {
 }
 
 // Convert a feed item to a filing record
-const NOISE_FILTER = /\b(results|earnings|revenue|quarterly|annual report|full.year|half.year|interim report|financial results|årsrapport|halvårsrapport|kvartalsrapport|delårsrapport|resultat|omsætning|liikevaihto|annual general meeting|general meeting|\bagm\b|\begm\b|extraordinary general|prospectus|notice of meeting|notice to shareholders|insider list|disclosure of major|voting rights|total voting|share capital change|generalforsamling|ordinær generalforsamling)\b/i;
+const NOISE_FILTER = /\b(results|earnings|revenue|quarterly|annual report|full.year|half.year|interim report|financial results|årsrapport|halvårsrapport|kvartalsrapport|delårsrapport|resultat|omsætning|liikevaihto|annual general meeting|general meeting|\bagm\b|\begm\b|extraordinary general|prospectus|notice of meeting|notice to shareholders|insider list|disclosure of major|voting rights|total voting|share capital change|generalforsamling|ordinær generalforsamling|government bond|treasury bill|riksbank|central bank|auction result|etf|etp|index provider|index change|underlying price|market act|chapter \d+|section \d+)\b/i;
 
 const CATEGORIES = [
   { label: 'Insider Purchase',      pat: /insider.buy|insider.purchas|director.buy|bought.+shares?|acqui\w+.+shares?.+open.market/i },
@@ -177,13 +177,16 @@ function feedItemToFiling(item, region) {
   // Then drop by keyword pattern in title + description + keywords
   const searchText = `${item.title} ${item.description || ''} ${(item.keywords || []).join(' ')}`
   if (NOISE_FILTER.test(searchText)) return null;
+  const event_type = classifyEvent(searchText) || classifyEvent((item.subjects || []).join(' '));
+  // Drop items that don't match any meaningful category — unclassified noise
+  if (event_type === 'Announcement') return null;
   const name = item.company || item.title.split(/\s+(announces?|–|-)\s+/i)[0]?.trim() || item.title;
   return {
     name,
     ticker:   item.ticker || null,
     exchange: item.exchange,
     date:     item.pubDate,
-    event_type:  classifyEvent(searchText) || classifyEvent((item.subjects || []).join(' ')),
+    event_type,
     headline:    item.title,
     summary:     item.description || item.title,
     region,
