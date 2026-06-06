@@ -107,6 +107,44 @@
       color: var(--accent);
       font-weight: 600;
     }
+    .nav-item.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+    .nav-item .nav-soon {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text2);
+      margin-left: auto;
+      border: 0.5px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+    /* Pitch output */
+    .pitch-output {
+      display: none;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 0.5px solid var(--border);
+      font-size: 13.5px;
+      line-height: 1.75;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+    .pitch-loading {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 0.5px solid var(--border);
+      font-size: 13px;
+      color: var(--text2);
+    }
+    .pitch-loading.vis { display: flex; }
     .nav-icon { width: 16px; text-align: center; font-size: 13px; opacity: 0.8; }
     .api-status {
       padding: 14px 18px;
@@ -350,10 +388,11 @@
   </div>
 
   <nav>
-    <div class="nav-item active" data-mod="screener">
+    <div class="nav-item disabled" data-mod="screener">
       <span class="nav-icon">⚡</span> Metric screener
+      <span class="nav-soon">Soon</span>
     </div>
-    <div class="nav-item" data-mod="catalyst">
+    <div class="nav-item active" data-mod="catalyst">
       <span class="nav-icon">🔍</span> Catalyst scanner
     </div>
     <div class="nav-item" data-mod="weekly">
@@ -383,7 +422,7 @@
 <main class="main">
 
   <!-- ── Module 1: Metric Screener ── -->
-  <div class="module active" id="mod-screener">
+  <div class="module" id="mod-screener">
     <div class="module-title">Metric Screener</div>
     <div class="module-sub">Find undervalued stocks matching your quantitative criteria using AI-powered web search.</div>
 
@@ -456,7 +495,7 @@
   </div>
 
   <!-- ── Module 2: Catalyst Scanner ── -->
-  <div class="module" id="mod-catalyst">
+  <div class="module active" id="mod-catalyst">
     <div class="module-title">Catalyst Scanner</div>
     <div class="module-sub">Scan for real corporate events and inflections the market may be mispricing.</div>
 
@@ -628,6 +667,7 @@ const putHist  = d  => localStorage.setItem(K.hist,  JSON.stringify(d));
 // ════════════════════════════════════════
 document.querySelectorAll('.nav-item').forEach(el => {
   el.addEventListener('click', () => {
+    if (el.classList.contains('disabled')) return;
     const id = el.dataset.mod;
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     document.querySelectorAll('.module').forEach(m => m.classList.remove('active'));
@@ -933,20 +973,73 @@ function catalystCard(idea) {
     <div class="verify-box"><strong>Next step:</strong> ${esc(idea.next_step)}</div>
     <div class="card-actions">
       <button class="btn btn-ghost save-btn">Save idea</button>
+      <button class="btn btn-ghost pitch-btn" style="font-size:12px;padding:6px 14px">Generate pitch →</button>
     </div>
+    <div class="pitch-loading">
+      <div class="spinner" style="width:14px;height:14px;border-width:2px"></div>
+      <span>Writing pitch…</span>
+    </div>
+    <div class="pitch-output"></div>
   </div>`;
 }
 
 function renderCatalystResults(ideas, containerId) {
   const el = document.getElementById(containerId);
   el.innerHTML = ideas.map(catalystCard).join('');
-  el.querySelectorAll('.save-btn').forEach((btn, i) => {
-    btn.addEventListener('click', () => {
+  el.querySelectorAll('.idea-card').forEach((card, i) => {
+    card.querySelector('.save-btn').addEventListener('click', () => {
       saveIdea(ideas[i], 'catalyst');
-      btn.textContent = 'Saved ✓';
-      btn.disabled = true;
+      card.querySelector('.save-btn').textContent = 'Saved ✓';
+      card.querySelector('.save-btn').disabled = true;
     });
+    card.querySelector('.pitch-btn').addEventListener('click', () => generatePitch(ideas[i], card));
   });
+}
+
+async function generatePitch(idea, card) {
+  const btn     = card.querySelector('.pitch-btn');
+  const loading = card.querySelector('.pitch-loading');
+  const output  = card.querySelector('.pitch-output');
+
+  btn.disabled = true;
+  loading.classList.add('vis');
+  output.style.display = 'none';
+
+  const apiKey = getKey();
+  if (!apiKey) {
+    loading.classList.remove('vis');
+    output.style.display = 'block';
+    output.textContent = 'API key not set — go to Settings.';
+    btn.disabled = false;
+    return;
+  }
+
+  const sys = `You are a senior buy-side analyst. Write a short but rigorous company pitch based on a recent filing or corporate announcement. Structure it in exactly three paragraphs with no headers or bullet points:
+1. What the company does — business model, approximate size, sector, competitive position, and any relevant history.
+2. Why this specific event is interesting from an investment angle — what it signals, what the market might be missing, and what the potential setup looks like.
+3. The 3–4 most important things to research before going deeper — name specific filings to pull, metrics to check, or earnings calls to read. Be honest about uncertainty.`;
+
+  const userMsg = `Company: ${idea.name} (${idea.ticker}, ${idea.exchange})
+Event type: ${idea.event_type}
+Event summary: ${idea.event_summary}
+Initial thesis: ${idea.thesis}
+
+Write the three-paragraph pitch now.`;
+
+  try {
+    const text = await callClaude(sys, userMsg, false);
+    output.textContent = text;
+    output.style.display = 'block';
+    btn.textContent = 'Regenerate pitch';
+    btn.disabled = false;
+  } catch (e) {
+    output.style.display = 'block';
+    output.textContent = 'Error: ' + e.message;
+    btn.textContent = 'Try again';
+    btn.disabled = false;
+  } finally {
+    loading.classList.remove('vis');
+  }
 }
 
 // ════════════════════════════════════════
