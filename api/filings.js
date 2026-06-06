@@ -115,10 +115,11 @@ async function globeNewswireFeed(exchange, limit = 15) {
     if (!xml.includes('<item>')) return [];
     return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, limit).map(m => {
       const raw = tag => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
-      // GNW RSS: <author> or <dc:creator> = company name, <title> = headline, <description> = excerpt
-      const company = raw('author') || raw('dc:creator') || '';
-      const title   = raw('title');
-      const desc    = raw('description').replace(/<[^>]+>/g, '').slice(0, 300).trim();
+      // GNW <author> is "email@domain.com (Company Name)" — extract the name part
+      const authorRaw = raw('author') || raw('dc:creator') || '';
+      const company   = authorRaw.match(/\(([^)]+)\)/)?.[1] || authorRaw || '';
+      const title     = raw('title');
+      const desc      = raw('description').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').slice(0, 280).trim();
       return { company, title, description: desc, pubDate: raw('pubDate'), exchange };
     });
   } catch { return []; }
@@ -152,17 +153,20 @@ function classifyEvent(text) {
 function feedItemToFiling(item, region) {
   const searchText = `${item.title} ${item.description || ''}`;
   if (EARNINGS_FILTER.test(searchText)) return null;
-  const entity     = item.company || (item.title.includes(' - ') ? item.title.split(' - ')[0].trim() : item.title.split(':')[0].trim());
-  const event_type = classifyEvent(searchText);
+  // Company name: GNW puts it in item.company (parsed from <author>)
+  // Fallback: "Company Name - Headline" format or first segment before ":"
+  const name = item.company
+    || (item.title.includes(' - ') ? item.title.split(' - ')[0].trim() : null)
+    || item.title.split(':')[0].trim();
   return {
-    entity,
-    date:           item.pubDate,
-    form_type:      'Announcement',
-    event_type,
-    event_headline: item.title,
-    event_summary:  item.description || item.title,
+    name,
+    ticker:   null,
+    exchange: item.exchange,
+    date:     item.pubDate,
+    event_type:  classifyEvent(searchText),
+    headline:    item.title,
+    summary:     item.description || item.title,
     region,
-    exchange:       item.exchange || exchangeLabel,
   };
 }
 
@@ -193,34 +197,47 @@ export default async function handler(req, res) {
   const tasks = [];
 
   // ── US: SEC EDGAR ──────────────────────────────────────────────────────────
+  const edgarPush = (type, summary) => x => raw.push({
+    name:       x.entity,
+    ticker:     null,          // resolved later via tickerMap
+    exchange:   'US',
+    date:       x.date,
+    event_type: type,
+    headline:   `${x.entity} — ${x.form_type || type}`,
+    summary,
+    region:     'us',
+    _entity:    x.entity,      // kept for ticker lookup
+    accession:  x.accession,
+  });
+
   if (inclUS) {
     if (events.includes('Spinoffs/carve-outs'))
       tasks.push(edgarSearch({ keywords: ['spin-off','spinoff','carve-out','split-off'], form: '8-K', start, end })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Spinoff/Carve-out', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Spinoff/Carve-out', '8-K filing: spin-off, carve-out, or split-off announcement'))));
 
     if (events.includes('Significant buybacks'))
       tasks.push(edgarSearch({ keywords: ['repurchase program','share repurchase authorization','stock repurchase program'], form: '8-K', start, end })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Buyback', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Share Buyback', '8-K filing: share repurchase program announced or authorised'))));
 
     if (events.includes('Insider purchases'))
       tasks.push(getForm4Issuers(start, end)
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Insider Purchase', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Insider Purchase', 'Form 4 filed: insider securities transaction reported'))));
 
     if (events.includes('Strategic reviews/M&A'))
       tasks.push(edgarSearch({ keywords: ['strategic review','strategic alternatives','merger agreement','definitive agreement'], form: '8-K', start, end })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Strategic Review/M&A', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('M&A', '8-K filing: strategic review, merger agreement, or sale process announced'))));
 
     if (events.includes('Activist involvement'))
       tasks.push(edgarSearch({ keywords: [], form: 'SC 13D', start, end })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Activist (SC 13D)', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Activist', 'SC 13D filed: activist investor disclosed significant stake (>5%)'))));
 
     if (events.includes('Management changes'))
       tasks.push(edgarSearch({ keywords: ['appointed as Chief Executive','new Chief Executive','new CEO'], form: '8-K', start, end, limit: 6 })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Management Change', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Management Change', '8-K filing: CEO or senior executive appointment or departure'))));
 
     if (events.includes('Core biz inflecting'))
       tasks.push(edgarSearch({ keywords: ['record revenue','record earnings','first profitable','inflection point'], form: '8-K', start, end })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Business Inflection', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Business Inflection', '8-K filing: record revenue, first profitable quarter, or business inflection point'))));
   }
 
   // ── Nordic + Canada: Globe Newswire by country ────────────────────────────
@@ -247,10 +264,10 @@ export default async function handler(req, res) {
     inclUS ? buildTickerMap() : Promise.resolve(new Map()),
   ]);
 
-  // Enrich US filings with real tickers
-  const filings = raw.map(f => ({
+  // Enrich US filings with resolved tickers; strip internal _entity field
+  const filings = raw.map(({ _entity, ...f }) => ({
     ...f,
-    ticker: f.region === 'us' ? (findTicker(f.entity, tickerMap) || '?') : undefined,
+    ticker: f.region === 'us' ? (findTicker(_entity || f.name, tickerMap) || null) : null,
   }));
 
   return res.json({ filings: filings.slice(0, 50), start, end, total: filings.length });
