@@ -125,6 +125,8 @@ async function globeNewswireFeed(exchange, limit = 15) {
 }
 
 // Convert a feed item to a filing record
+const EARNINGS_FILTER = /\b(results|earnings|revenue|quarterly|annual report|full.year|half.year|Q[1-4] 20|interim report|financial results|årsrapport|halvårsrapport|kvartalsrapport|delårsrapport|resultat|omsætning|liikevaihto)\b/i;
+
 const CATEGORIES = [
   { label: 'Insider Purchase',      pat: /insider.buy|insider.purchas|director.buy|bought.+shares?|acqui\w+.+shares?.+open.market/i },
   { label: 'Insider Sale',          pat: /insider.sal|director.sal|sold.+shares?.+open.market/i },
@@ -148,9 +150,10 @@ function classifyEvent(text) {
   return 'Announcement';
 }
 
-function feedItemToFiling(item, region, exchangeLabel) {
-  const entity    = item.company || (item.title.includes(' - ') ? item.title.split(' - ')[0].trim() : item.title.split(':')[0].trim());
+function feedItemToFiling(item, region) {
   const searchText = `${item.title} ${item.description || ''}`;
+  if (EARNINGS_FILTER.test(searchText)) return null;
+  const entity     = item.company || (item.title.includes(' - ') ? item.title.split(' - ')[0].trim() : item.title.split(':')[0].trim());
   const event_type = classifyEvent(searchText);
   return {
     entity,
@@ -233,9 +236,10 @@ export default async function handler(req, res) {
   ]) {
     if (flag)
       tasks.push(globeNewswireFeed(exchange)
-        .then(items => items.forEach(item =>
-          raw.push(feedItemToFiling(item, region))
-        )));
+        .then(items => items.forEach(item => {
+          const f = feedItemToFiling(item, region);
+          if (f) raw.push(f);
+        })));
   }
 
   // Run filings + ticker map fetch in parallel
