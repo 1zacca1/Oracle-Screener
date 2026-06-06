@@ -116,28 +116,22 @@ async function globeNewswireFeed(exchange, limit = 20) {
     return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, limit).map(m => {
       const block = m[1];
       const raw = tag => block.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
-      const title = raw('title');
-      const desc  = raw('description').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 
-      // Company name strategy (in priority order):
-      // 1. <author> tag: either "Company Name" or "email@x.com (Company Name)"
-      // 2. <dc:creator> tag
-      // 3. GNW descriptions often start: "City, Date – Company Name, ..."
-      //    or "City, Date – Company Name announces..."
-      const authorRaw = raw('author') || raw('dc:creator') || '';
-      let company = authorRaw.match(/\(([^)]+)\)/)?.[1]   // "email (Name)"
-                 || (authorRaw.includes('@') ? '' : authorRaw); // plain name, not email
-      if (!company) {
-        // Try "– Company Name," or "– Company Name " pattern in description
-        const m2 = desc.match(/–\s+([^,–]{3,60?}?)[,\s]/);
-        company = m2?.[1]?.trim() || '';
-      }
-      if (!company) {
-        // Last resort: first segment of title before " Announces" / " Reports" / " –"
-        company = title.split(/\s+(announces?|reports?|–|-)\s+/i)[0]?.trim() || '';
-      }
+      // GNW uses <dc:contributor> for the company name
+      const company = raw('dc:contributor') || raw('dc:creator') || '';
 
-      return { company, title, description: desc.slice(0, 280), pubDate: raw('pubDate'), exchange };
+      // Ticker is in <category domain=".../rss/stock">Exchange:TICKER</category>
+      // Take the first stock category and strip the exchange prefix
+      const stockCat = block.match(/domain="[^"]*rss\/stock"[^>]*>([^<]+)/)?.[1]?.trim() || '';
+      const ticker   = stockCat.includes(':') ? stockCat.split(':')[1] : stockCat;
+
+      const title    = raw('title');
+      const desc     = raw('description').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      // dc:subject gives reliable category signal; dc:keyword gives sector/topic tags
+      const subjects = [...block.matchAll(/<dc:subject[^>]*>([^<]+)<\/dc:subject>/g)].map(x => x[1].trim());
+      const keywords = [...block.matchAll(/<dc:keyword[^>]*>([^<]+)<\/dc:keyword>/g)].map(x => x[1].trim());
+
+      return { company, ticker, title, description: desc.slice(0, 280), subjects, keywords, pubDate: raw('pubDate'), exchange };
     });
   } catch { return []; }
 }
@@ -175,20 +169,29 @@ function classifyEvent(text) {
   return 'Announcement';
 }
 
+// GNW dc:subject values that are always noise
+const NOISE_SUBJECTS = new Set([
+  'prospectus/announcement of prospectus', 'prospectus', 'base prospectus',
+  'total voting rights', 'share capital and voting rights',
+  'managers\' transactions', 'notification of major holdings',
+  'annual general meeting', 'extraordinary general meeting',
+  'insider information', 'periodic financial information',
+]);
+
 function feedItemToFiling(item, region) {
-  const searchText = `${item.title} ${item.description || ''}`;
+  // Drop by subject first (most reliable signal)
+  if (item.subjects?.some(s => NOISE_SUBJECTS.has(s.toLowerCase()))) return null;
+
+  // Then drop by keyword pattern in title + description + keywords
+  const searchText = `${item.title} ${item.description || ''} ${(item.keywords || []).join(' ')}`
   if (NOISE_FILTER.test(searchText)) return null;
-  // Company name: GNW puts it in item.company (parsed from <author>)
-  // Fallback: "Company Name - Headline" format or first segment before ":"
-  const name = item.company
-    || (item.title.includes(' - ') ? item.title.split(' - ')[0].trim() : null)
-    || item.title.split(':')[0].trim();
+  const name = item.company || item.title.split(/\s+(announces?|–|-)\s+/i)[0]?.trim() || item.title;
   return {
     name,
-    ticker:   null,
+    ticker:   item.ticker || null,
     exchange: item.exchange,
     date:     item.pubDate,
-    event_type:  classifyEvent(searchText),
+    event_type:  classifyEvent(searchText) || classifyEvent((item.subjects || []).join(' ')),
     headline:    item.title,
     summary:     item.description || item.title,
     region,
