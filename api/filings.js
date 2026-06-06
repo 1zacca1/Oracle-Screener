@@ -124,6 +124,7 @@ async function globeNewswireFeed(exchange, limit = 20) {
       // Take the first stock category and strip the exchange prefix
       const stockCat = block.match(/domain="[^"]*rss\/stock"[^>]*>([^<]+)/)?.[1]?.trim() || '';
       const ticker   = stockCat.includes(':') ? stockCat.split(':')[1] : stockCat;
+      const link     = raw('link') || block.match(/<link>([^<]+)<\/link>/)?.[1]?.trim() || '';
 
       const title    = raw('title');
       const desc     = raw('description').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
@@ -131,7 +132,7 @@ async function globeNewswireFeed(exchange, limit = 20) {
       const subjects = [...block.matchAll(/<dc:subject[^>]*>([^<]+)<\/dc:subject>/g)].map(x => x[1].trim());
       const keywords = [...block.matchAll(/<dc:keyword[^>]*>([^<]+)<\/dc:keyword>/g)].map(x => x[1].trim());
 
-      return { company, ticker, title, description: desc.slice(0, 280), subjects, keywords, pubDate: raw('pubDate'), exchange };
+      return { company, ticker, link, title, description: desc.slice(0, 280), subjects, keywords, pubDate: raw('pubDate'), exchange };
     });
   } catch { return []; }
 }
@@ -189,6 +190,7 @@ function feedItemToFiling(item, region) {
     event_type,
     headline:    item.title,
     summary:     item.description || item.title,
+    link:        item.link || null,
     region,
   };
 }
@@ -220,18 +222,24 @@ export default async function handler(req, res) {
   const tasks = [];
 
   // ── US: SEC EDGAR ──────────────────────────────────────────────────────────
-  const edgarPush = (type, summary) => x => raw.push({
-    name:       x.entity,
-    ticker:     null,          // resolved later via tickerMap
-    exchange:   'US',
-    date:       x.date,
-    event_type: type,
-    headline:   `${x.entity} — ${x.form_type || type}`,
-    summary,
-    region:     'us',
-    _entity:    x.entity,      // kept for ticker lookup
-    accession:  x.accession,
-  });
+  const edgarPush = (type, summary) => x => {
+    const acc  = (x.accession || '').replace(/-/g, '');
+    const link = x.accession
+      ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${encodeURIComponent(x.entity)}&type=${encodeURIComponent(x.form_type || '')}&dateb=&owner=include&count=10`
+      : null;
+    raw.push({
+      name:       x.entity,
+      ticker:     null,
+      exchange:   'US',
+      date:       x.date,
+      event_type: type,
+      headline:   `${x.entity} — ${x.form_type || type}`,
+      summary,
+      link,
+      region:     'us',
+      _entity:    x.entity,
+    });
+  };
 
   if (inclUS) {
     if (events.includes('Spinoffs/carve-outs'))

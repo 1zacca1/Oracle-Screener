@@ -1009,6 +1009,7 @@ function catalystCard(f) {
     <div class="card-actions" style="margin-top:14px">
       <button class="btn btn-ghost save-btn">Save idea</button>
       <button class="btn btn-ghost pitch-btn" style="font-size:12px;padding:6px 14px">Generate pitch →</button>
+      ${f.link ? `<a href="${esc(f.link)}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:12px;padding:6px 14px;text-decoration:none">Read filing ↗</a>` : ''}
     </div>
     <div class="pitch-loading">
       <div class="spinner" style="width:14px;height:14px;border-width:2px"></div>
