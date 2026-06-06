@@ -998,7 +998,8 @@ function catalystCard(f) {
       </div>
     </div>
     <div class="co-name">${esc(name)}</div>
-    ${summary ? `<div class="tagline">${esc(summary)}</div>` : ''}
+    ${f.event_headline ? `<div class="tagline" style="font-weight:500;color:var(--text);margin-bottom:4px">${esc(f.event_headline)}</div>` : ''}
+    ${f.event_summary && f.event_summary !== f.event_headline ? `<div class="tagline">${esc(f.event_summary)}</div>` : ''}
     <div class="card-actions" style="margin-top:14px">
       <button class="btn btn-ghost save-btn">Save idea</button>
       <button class="btn btn-ghost pitch-btn" style="font-size:12px;padding:6px 14px">Generate pitch →</button>
@@ -1052,7 +1053,7 @@ async function generatePitch(idea, card) {
   const exch    = idea.exchange || '';
   const userMsg = `Company: ${name}${ticker ? ` (${ticker}` : ''}${exch ? `, ${exch})` : (ticker ? ')' : '')}
 Event type: ${idea.event_type || idea.form_type || ''}
-Event summary: ${idea.event_summary || idea.tagline || ''}
+Event: ${idea.event_headline || idea.event_summary || idea.tagline || ''}
 Initial thesis: ${idea.thesis || ''}
 
 Write the three-paragraph pitch now.`;

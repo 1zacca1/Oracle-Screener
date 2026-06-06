@@ -115,21 +115,29 @@ async function globeNewswireFeed(exchange, limit = 15) {
     if (!xml.includes('<item>')) return [];
     return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, limit).map(m => {
       const raw = tag => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
-      return { title: raw('title'), pubDate: raw('pubDate'), exchange };
+      // GNW RSS: <author> or <dc:creator> = company name, <title> = headline, <description> = excerpt
+      const company = raw('author') || raw('dc:creator') || '';
+      const title   = raw('title');
+      const desc    = raw('description').replace(/<[^>]+>/g, '').slice(0, 300).trim();
+      return { company, title, description: desc, pubDate: raw('pubDate'), exchange };
     });
   } catch { return []; }
 }
 
-// Convert a feed item (title + pubDate) to a filing record
+// Convert a feed item to a filing record
 function feedItemToFiling(item, region, eventType = 'Announcement') {
-  const colon = item.title.indexOf(':');
-  const entity = colon > 0 ? item.title.slice(0, colon).trim() : item.title.split(' ')[0];
+  // For GNW items: company field holds the entity name, title is the headline
+  const entity  = item.company || (item.title.includes(' - ') ? item.title.split(' - ')[0].trim() : item.title.split(':')[0].trim());
+  const summary = item.description
+    ? `${item.title} — ${item.description}`
+    : item.title;
   return {
     entity,
     date:          item.pubDate,
     form_type:     'Announcement',
     event_type:    eventType,
-    event_summary: item.title,
+    event_headline: item.title,
+    event_summary:  item.description || item.title,
     region,
     exchange:      item.exchange,
   };
