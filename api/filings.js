@@ -89,32 +89,57 @@ async function getForm4Issuers(start, end, limit = 15) {
 
 // ── Oslo Bors Newsweb ─────────────────────────────────────────────────────────
 async function newswebOslo(start, end) {
-  try {
-    const r = await fetch(
-      `https://newsweb.oslobors.no/message/browsecategory?category=OB&from=${start}&to=${end}&output=rss`,
-      { headers: { 'User-Agent': 'Oracle-Screener/1.0' } }
-    );
-    if (!r.ok) return [];
-    const xml = await r.text();
-    if (!xml.includes('<item>')) return [];
-    return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(m => {
-      const raw = tag => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
-      return { title: raw('title'), pubDate: raw('pubDate'), exchange: 'Oslo' };
-    }).slice(0, 12);
-  } catch { return []; }
+  const urls = [
+    `https://newsweb.oslobors.no/message/browsecategory?category=OB&from=${start}&to=${end}&output=rss`,
+    `https://newsweb.oslobors.no/message/browsecategory?category=OB&output=rss`,
+    `https://www.newsweb.no/newsweb/rss.do?market=OB`,
+  ];
+  const headers = { 'User-Agent': 'Mozilla/5.0 (compatible; Oracle-Screener/1.0)' };
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers });
+      if (!r.ok) continue;
+      const xml = await r.text();
+      if (!xml.includes('<item>')) continue;
+      return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(m => {
+        const raw = tag => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
+        return { title: raw('title'), pubDate: raw('pubDate'), exchange: 'Oslo' };
+      }).slice(0, 15);
+    } catch { continue; }
+  }
+  return [];
 }
 
-// ── Nasdaq Nordic RSS ─────────────────────────────────────────────────────────
-// Nasdaq Nordic feeds: nasdaqomxnordic.com/feeds/news?market=<market>
-// Markets: stockholm, copenhagen, helsinki (also 'nordic' for all)
+// ── Nasdaq Nordic / Euronext Nordic RSS ──────────────────────────────────────
+// Try multiple URL patterns — Nasdaq Nordic may block Vercel IPs, so we also
+// try Euronext (which acquired Oslo Bors) and cision/mfn as fallbacks.
+const NORDIC_FEED_MAP = {
+  Stockholm:  [
+    'https://www.nasdaqomxnordic.com/feeds/news?market=stockholm',
+    'https://www.nasdaqomxnordic.com/feeds/news?market=stockholm&newstype=regulatory',
+    'https://mfn.se/feeds/latest?market=stockholm',
+  ],
+  Copenhagen: [
+    'https://www.nasdaqomxnordic.com/feeds/news?market=copenhagen',
+    'https://www.nasdaqomxnordic.com/feeds/news?market=copenhagen&newstype=regulatory',
+    'https://mfn.se/feeds/latest?market=copenhagen',
+  ],
+  Helsinki:   [
+    'https://www.nasdaqomxnordic.com/feeds/news?market=helsinki',
+    'https://www.nasdaqomxnordic.com/feeds/news?market=helsinki&newstype=regulatory',
+    'https://mfn.se/feeds/latest?market=helsinki',
+  ],
+};
+
 async function nasdaqNordicFeed(market, exchange, limit = 10) {
-  const urls = [
+  const urls = NORDIC_FEED_MAP[exchange] || [
     `https://www.nasdaqomxnordic.com/feeds/news?market=${market}`,
-    `https://www.nasdaqomxnordic.com/feeds/news?market=${market}&newstype=regulatory`,
   ];
   for (const url of urls) {
     try {
-      const r = await fetch(url, { headers: { 'User-Agent': 'Oracle-Screener/1.0' } });
+      const r = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Oracle-Screener/1.0)' },
+      });
       if (!r.ok) continue;
       const xml = await r.text();
       if (!xml.includes('<item>') && !xml.includes('<entry>')) continue;
