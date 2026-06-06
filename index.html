@@ -708,11 +708,32 @@ bindSlider('s-fcf',    '%');
 bindSlider('s-insider','%');
 
 // ════════════════════════════════════════
-//  Catalyst pills
+//  Catalyst pills + universe sync
 // ════════════════════════════════════════
 document.querySelectorAll('#c-pills .pill, #c-exchange-pills .pill').forEach(p =>
   p.addEventListener('click', () => p.classList.toggle('on'))
 );
+
+const US_EXCHANGES      = ['US'];
+const CANADA_EXCHANGES  = ['Canada'];
+const NORDIC_EXCHANGES  = ['Oslo', 'Stockholm', 'Copenhagen', 'Helsinki'];
+const ALL_EXCHANGES     = [...US_EXCHANGES, ...CANADA_EXCHANGES, ...NORDIC_EXCHANGES];
+
+function setExchangePills(active) {
+  document.querySelectorAll('#c-exchange-pills .pill').forEach(p => {
+    p.classList.toggle('on', active.includes(p.dataset.val));
+  });
+}
+
+document.getElementById('c-universe').addEventListener('change', function () {
+  switch (this.value) {
+    case 'All markets':   setExchangePills(ALL_EXCHANGES);    break;
+    case 'Nordic + US':   setExchangePills([...US_EXCHANGES, ...NORDIC_EXCHANGES]); break;
+    case 'Nordic only':   setExchangePills(NORDIC_EXCHANGES); break;
+    case 'US only':       setExchangePills(US_EXCHANGES);     break;
+    case 'Canada only':   setExchangePills(CANADA_EXCHANGES); break;
+  }
+});
 
 // ════════════════════════════════════════
 //  API status indicator
