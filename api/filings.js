@@ -1,4 +1,4 @@
-// Real filings from SEC EDGAR + Oslo Bors Newsweb
+// Real filings from SEC EDGAR + Oslo Bors Newsweb + Nasdaq Nordic
 // Tickers resolved via SEC company_tickers.json — no API key required
 
 const EFTS = 'https://efts.sec.gov/LATEST/search-index';
@@ -40,7 +40,6 @@ function findTicker(entityName, map) {
   if (!entityName || !map.size) return null;
   const key = normalise(entityName);
   if (map.has(key)) return map.get(key);
-  // Fuzzy: match on first two significant words
   const prefix = key.split(' ').slice(0, 2).join(' ');
   for (const [k, v] of map) {
     if (k.startsWith(prefix) && Math.abs(k.length - key.length) < 12) return v;
@@ -77,7 +76,6 @@ async function getForm4Issuers(start, end, limit = 15) {
     const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)];
     const results = [];
     for (const m of entries) {
-      // Titles look like: "4 - COMPANY NAME (CIK) (Issuer)"
       const issuer = m[1].match(/4\s*-\s*(.+?)\s*\(\d+\)\s*\(Issuer\)/i)?.[1]?.trim();
       if (!issuer) continue;
       const updated = m[1].match(/<updated>(.*?)<\/updated>/)?.[1]?.split('T')[0] || '';
@@ -96,12 +94,99 @@ async function newswebOslo(start, end) {
       `https://newsweb.oslobors.no/message/browsecategory?category=OB&from=${start}&to=${end}&output=rss`,
       { headers: { 'User-Agent': 'Oracle-Screener/1.0' } }
     );
+    if (!r.ok) return [];
     const xml = await r.text();
+    if (!xml.includes('<item>')) return [];
     return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map(m => {
       const raw = tag => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
-      return { title: raw('title'), pubDate: raw('pubDate') };
+      return { title: raw('title'), pubDate: raw('pubDate'), exchange: 'Oslo' };
     }).slice(0, 12);
   } catch { return []; }
+}
+
+// ── Nasdaq Nordic RSS ─────────────────────────────────────────────────────────
+// Nasdaq Nordic feeds: nasdaqomxnordic.com/feeds/news?market=<market>
+// Markets: stockholm, copenhagen, helsinki (also 'nordic' for all)
+async function nasdaqNordicFeed(market, exchange, limit = 10) {
+  const urls = [
+    `https://www.nasdaqomxnordic.com/feeds/news?market=${market}`,
+    `https://www.nasdaqomxnordic.com/feeds/news?market=${market}&newstype=regulatory`,
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: { 'User-Agent': 'Oracle-Screener/1.0' } });
+      if (!r.ok) continue;
+      const xml = await r.text();
+      if (!xml.includes('<item>') && !xml.includes('<entry>')) continue;
+      const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+      if (!items.length) continue;
+      return items.slice(0, limit).map(m => {
+        const raw = tag => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
+        return { title: raw('title'), pubDate: raw('pubDate'), exchange };
+      });
+    } catch { continue; }
+  }
+  return [];
+}
+
+// ── Canada: Globe Newswire RSS ────────────────────────────────────────────────
+// Globe Newswire is the primary press release wire for TSX-listed companies.
+// SEDAR+ has no public RSS/API as of 2025.
+async function globeNewswireCanada(limit = 15) {
+  const urls = [
+    'https://www.globenewswire.com/RssFeed/country/Canada',
+    'https://www.newswire.ca/en/rss/latest.rss',
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: { 'User-Agent': 'Oracle-Screener/1.0' } });
+      if (!r.ok) continue;
+      const xml = await r.text();
+      if (!xml.includes('<item>') && !xml.includes('<entry>')) continue;
+      const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+      if (!items.length) continue;
+      return items.slice(0, limit).map(m => {
+        const raw = tag => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
+        return { title: raw('title'), pubDate: raw('pubDate'), exchange: 'Canada' };
+      });
+    } catch { continue; }
+  }
+  return [];
+}
+
+// ── MFN (Modular Finance Nordic) ─────────────────────────────────────────────
+async function mfnFeed(limit = 10) {
+  const urls = ['https://mfn.se/feeds/latest', 'https://mfn.se/rss'];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: { 'User-Agent': 'Oracle-Screener/1.0' } });
+      if (!r.ok) continue;
+      const xml = await r.text();
+      if (!xml.includes('<item>') && !xml.includes('<entry>')) continue;
+      const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+      if (!items.length) continue;
+      return items.slice(0, limit).map(m => {
+        const raw = tag => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
+        return { title: raw('title'), pubDate: raw('pubDate'), exchange: 'Nordic' };
+      });
+    } catch { continue; }
+  }
+  return [];
+}
+
+// Convert a feed item (title + pubDate) to a filing record
+function feedItemToFiling(item, region, eventType = 'Announcement') {
+  const colon = item.title.indexOf(':');
+  const entity = colon > 0 ? item.title.slice(0, colon).trim() : item.title.split(' ')[0];
+  return {
+    entity,
+    date:          item.pubDate,
+    form_type:     'Announcement',
+    event_type:    eventType,
+    event_summary: item.title,
+    region,
+    exchange:      item.exchange,
+  };
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -109,18 +194,28 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const {
-    events   = [],
-    lookback = 'past 7 days',
-    universe = 'Nordic + US',
+    events    = [],
+    lookback  = 'past 7 days',
+    universe  = 'Nordic + US',
+    exchanges = ['US', 'Canada', 'Oslo', 'Stockholm', 'Copenhagen', 'Helsinki'],
   } = req.body;
 
   const { start, end } = lookbackDates(lookback);
-  const inclUS     = universe !== 'Nordic only';
-  const inclNordic = universe !== 'US only';
+  const notNordicOnly = universe !== 'Nordic only';
+  const notUSOnly     = universe !== 'US only';
+  const notCAOnly     = universe !== 'Canada only';
+  const inclUS     = notNordicOnly && notCAOnly  && exchanges.includes('US');
+  const inclCA     = notNordicOnly && notUSOnly  && exchanges.includes('Canada');
+  const inclOslo   = notUSOnly     && notCAOnly  && exchanges.includes('Oslo');
+  const inclSto    = notUSOnly     && notCAOnly  && exchanges.includes('Stockholm');
+  const inclCph    = notUSOnly     && notCAOnly  && exchanges.includes('Copenhagen');
+  const inclHel    = notUSOnly     && notCAOnly  && exchanges.includes('Helsinki');
+  const inclNordic = inclOslo || inclSto || inclCph || inclHel;
 
-  const raw    = [];
-  const tasks  = [];
+  const raw   = [];
+  const tasks = [];
 
+  // ── US: SEC EDGAR ──────────────────────────────────────────────────────────
   if (inclUS) {
     if (events.includes('Spinoffs/carve-outs'))
       tasks.push(edgarSearch({ keywords: ['spin-off','spinoff','carve-out','split-off'], form: '8-K', start, end })
@@ -151,16 +246,44 @@ export default async function handler(req, res) {
         .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Business Inflection', region: 'us' }))));
   }
 
-  if (inclNordic)
+  // ── Nordic: Oslo + Stockholm + Copenhagen + Helsinki ───────────────────────
+  if (inclOslo)
     tasks.push(newswebOslo(start, end)
-      .then(items => items.forEach(item => raw.push({
-        entity:        item.title.split(':')[0]?.trim() || 'Nordic Company',
-        date:          item.pubDate,
-        form_type:     'Announcement',
-        event_type:    'Nordic Announcement',
-        event_summary: item.title,
-        region:        'nordic',
-      }))));
+      .then(items => items.forEach(item =>
+        raw.push(feedItemToFiling(item, 'nordic', 'Oslo Announcement'))
+      )));
+
+  if (inclSto)
+    tasks.push(nasdaqNordicFeed('stockholm', 'Stockholm')
+      .then(items => items.forEach(item =>
+        raw.push(feedItemToFiling(item, 'nordic', 'Stockholm Announcement'))
+      )));
+
+  if (inclCph)
+    tasks.push(nasdaqNordicFeed('copenhagen', 'Copenhagen')
+      .then(items => items.forEach(item =>
+        raw.push(feedItemToFiling(item, 'nordic', 'Copenhagen Announcement'))
+      )));
+
+  if (inclHel)
+    tasks.push(nasdaqNordicFeed('helsinki', 'Helsinki')
+      .then(items => items.forEach(item =>
+        raw.push(feedItemToFiling(item, 'nordic', 'Helsinki Announcement'))
+      )));
+
+  // MFN as fallback aggregator only when fetching all Nordic markets
+  if (inclOslo && inclSto && inclCph && inclHel)
+    tasks.push(mfnFeed()
+      .then(items => items.forEach(item =>
+        raw.push(feedItemToFiling(item, 'nordic', 'Nordic Announcement'))
+      )));
+
+  // ── Canada: Globe Newswire ─────────────────────────────────────────────────
+  if (inclCA)
+    tasks.push(globeNewswireCanada()
+      .then(items => items.forEach(item =>
+        raw.push(feedItemToFiling(item, 'canada', 'Canada Announcement'))
+      )));
 
   // Run filings + ticker map fetch in parallel
   const [, tickerMap] = await Promise.all([

@@ -1,73 +1,49 @@
+const UA = { 'User-Agent': 'Oracle-Screener/1.0 contact@oracle-screener.app' };
+
+async function testFeed(label, url) {
+  try {
+    const r = await fetch(url, { headers: UA });
+    const text = await r.text();
+    const isXML = text.trim().startsWith('<?xml') || text.includes('<rss') || text.includes('<feed');
+    const itemCount = (text.match(/<item>/g) || text.match(/<entry>/g) || []).length;
+    const sample = text.slice(0, 200).replace(/\s+/g, ' ');
+    return { label, status: r.status, isXML, itemCount, sample };
+  } catch (e) {
+    return { label, error: e.message };
+  }
+}
+
 export default async function handler(req, res) {
-  const UA_SEC   = { 'User-Agent': 'Oracle-Screener/1.0 contact@oracle-screener.app' };
-  const UA_PLAIN = { 'User-Agent': 'Mozilla/5.0' };
-  const out = {};
+  const today = new Date().toISOString().split('T')[0];
+  const week  = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
 
-  // Test 1: SEC company tickers (CIK lookup)
-  try {
-    const r = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: UA_SEC });
-    const d = await r.json();
-    const aapl = Object.values(d).find(e => e.ticker === 'AAPL');
-    out.sec_tickers_ok = !!aapl;
-    out.sec_aapl_cik   = aapl?.cik_str;
-  } catch (e) { out.sec_tickers_err = e.message; }
+  const tests = await Promise.all([
+    // Oslo Bors Newsweb
+    testFeed('oslo_newsweb_dated',   `https://newsweb.oslobors.no/message/browsecategory?category=OB&from=${week}&to=${today}&output=rss`),
+    testFeed('oslo_newsweb_nodates', 'https://newsweb.oslobors.no/message/browsecategory?category=OB&output=rss'),
+    testFeed('oslo_newsweb_v2',      'https://www.newsweb.no/newsweb/rss.do?market=OB'),
 
-  // Test 2: EDGAR XBRL company concept (operating cash flow for AAPL CIK=320193)
-  try {
-    const r = await fetch(
-      'https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/NetCashProvidedByUsedInOperatingActivities.json',
-      { headers: UA_SEC }
-    );
-    const d = await r.json();
-    const entries = d?.units?.USD || [];
-    const annual = entries.filter(e => e.form === '10-K').sort((a, b) => b.end.localeCompare(a.end));
-    out.edgar_xbrl_ok        = r.ok && annual.length > 0;
-    out.edgar_aapl_ocf       = annual[0]?.val;
-    out.edgar_aapl_ocf_end   = annual[0]?.end;
-  } catch (e) { out.edgar_xbrl_err = e.message; }
+    // Nasdaq Nordic — Stockholm, Copenhagen, Helsinki
+    testFeed('nasdaq_stockholm',           'https://www.nasdaqomxnordic.com/feeds/news?market=stockholm'),
+    testFeed('nasdaq_stockholm_regulatory','https://www.nasdaqomxnordic.com/feeds/news?market=stockholm&newstype=regulatory'),
+    testFeed('nasdaq_copenhagen',          'https://www.nasdaqomxnordic.com/feeds/news?market=copenhagen'),
+    testFeed('nasdaq_helsinki',            'https://www.nasdaqomxnordic.com/feeds/news?market=helsinki'),
+    testFeed('nasdaq_nordic_all',          'https://www.nasdaqomxnordic.com/feeds/news'),
 
-  // Test 3: EDGAR XBRL capex for AAPL
-  try {
-    const r = await fetch(
-      'https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/PaymentsToAcquirePropertyPlantAndEquipment.json',
-      { headers: UA_SEC }
-    );
-    const d = await r.json();
-    const annual = (d?.units?.USD || []).filter(e => e.form === '10-K').sort((a, b) => b.end.localeCompare(a.end));
-    out.edgar_aapl_capex = annual[0]?.val;
-  } catch (e) { out.edgar_capex_err = e.message; }
+    // MFN (Modular Finance Nordic)
+    testFeed('mfn_latest',   'https://mfn.se/feeds/latest'),
+    testFeed('mfn_rss',      'https://mfn.se/rss'),
 
-  // Test 4: Stooq price for AAPL
-  try {
-    const r = await fetch('https://stooq.com/q/d/l/?s=aapl.us&i=d', { headers: UA_PLAIN });
-    const text = await r.text();
-    const lines = text.trim().split('\n');
-    const last = lines[lines.length - 1].split(',');
-    out.stooq_ok           = r.ok && last.length >= 5;
-    out.stooq_aapl_date    = last[0];
-    out.stooq_aapl_close   = parseFloat(last[4]);
-  } catch (e) { out.stooq_err = e.message; }
+    // Canada — Globe Newswire (main Canadian press release wire, TSX companies)
+    testFeed('gnw_canada',          'https://www.globenewswire.com/RssFeed/country/Canada'),
+    testFeed('gnw_canada_financial','https://www.globenewswire.com/RssFeed/country/Canada&Industry=Financial%20Services'),
+    testFeed('gnw_canada_energy',   'https://www.globenewswire.com/RssFeed/country/Canada&Industry=Energy%20%26%20Natural%20Resources'),
+    testFeed('cnw_newswire',        'https://www.newswire.ca/en/rss/latest.rss'),
+    testFeed('tsx_notices',         'https://www.tsx.com/json/market-regulatory-notices'),
 
-  // Test 5: Stooq price for Nordic (Oslo Bors)
-  try {
-    const r = await fetch('https://stooq.com/q/d/l/?s=bouvet.ol&i=d', { headers: UA_PLAIN });
-    const text = await r.text();
-    const lines = text.trim().split('\n');
-    const last = lines[lines.length - 1].split(',');
-    out.stooq_nordic_ok    = r.ok && last.length >= 5;
-    out.stooq_bouvet_close = parseFloat(last[4]);
-  } catch (e) { out.stooq_nordic_err = e.message; }
+    // EDGAR EFTS (control — should always work)
+    testFeed('edgar_efts',   `https://efts.sec.gov/LATEST/search-index?forms=8-K&dateRange=custom&startdt=${week}&enddt=${today}&q=%22spinoff%22`),
+  ]);
 
-  // Test 6: EDGAR EFTS (for catalyst scanner)
-  try {
-    const r = await fetch(
-      'https://efts.sec.gov/LATEST/search-index?forms=8-K&dateRange=custom&startdt=2026-05-01&enddt=2026-05-31&q=%22spinoff%22',
-      { headers: UA_SEC }
-    );
-    const d = await r.json();
-    out.edgar_efts_ok   = r.ok;
-    out.edgar_efts_hits = d?.hits?.total?.value ?? 0;
-  } catch (e) { out.edgar_efts_err = e.message; }
-
-  return res.json(out);
+  return res.json(tests);
 }
