@@ -125,10 +125,13 @@ async function globeNewswireFeed(exchange, limit = 20) {
       const stockCat = block.match(/domain="[^"]*rss\/stock"[^>]*>([^<]+)/)?.[1]?.trim() || '';
       const ticker   = stockCat.includes(':') ? stockCat.split(':')[1] : stockCat;
 
-      const title = raw('title');
-      const desc  = raw('description').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      const title    = raw('title');
+      const desc     = raw('description').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      // dc:subject gives reliable category signal; dc:keyword gives sector/topic tags
+      const subjects = [...block.matchAll(/<dc:subject[^>]*>([^<]+)<\/dc:subject>/g)].map(x => x[1].trim());
+      const keywords = [...block.matchAll(/<dc:keyword[^>]*>([^<]+)<\/dc:keyword>/g)].map(x => x[1].trim());
 
-      return { company, ticker, title, description: desc.slice(0, 280), pubDate: raw('pubDate'), exchange };
+      return { company, ticker, title, description: desc.slice(0, 280), subjects, keywords, pubDate: raw('pubDate'), exchange };
     });
   } catch { return []; }
 }
@@ -166,8 +169,21 @@ function classifyEvent(text) {
   return 'Announcement';
 }
 
+// GNW dc:subject values that are always noise
+const NOISE_SUBJECTS = new Set([
+  'prospectus/announcement of prospectus', 'prospectus', 'base prospectus',
+  'total voting rights', 'share capital and voting rights',
+  'managers\' transactions', 'notification of major holdings',
+  'annual general meeting', 'extraordinary general meeting',
+  'insider information', 'periodic financial information',
+]);
+
 function feedItemToFiling(item, region) {
-  const searchText = `${item.title} ${item.description || ''}`;
+  // Drop by subject first (most reliable signal)
+  if (item.subjects?.some(s => NOISE_SUBJECTS.has(s.toLowerCase()))) return null;
+
+  // Then drop by keyword pattern in title + description + keywords
+  const searchText = `${item.title} ${item.description || ''} ${(item.keywords || []).join(' ')}`
   if (NOISE_FILTER.test(searchText)) return null;
   const name = item.company || item.title.split(/\s+(announces?|–|-)\s+/i)[0]?.trim() || item.title;
   return {
@@ -175,7 +191,7 @@ function feedItemToFiling(item, region) {
     ticker:   item.ticker || null,
     exchange: item.exchange,
     date:     item.pubDate,
-    event_type:  classifyEvent(searchText),
+    event_type:  classifyEvent(searchText) || classifyEvent((item.subjects || []).join(' ')),
     headline:    item.title,
     summary:     item.description || item.title,
     region,
