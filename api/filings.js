@@ -125,21 +125,43 @@ async function globeNewswireFeed(exchange, limit = 15) {
 }
 
 // Convert a feed item to a filing record
-function feedItemToFiling(item, region, eventType = 'Announcement') {
-  // For GNW items: company field holds the entity name, title is the headline
-  const entity  = item.company || (item.title.includes(' - ') ? item.title.split(' - ')[0].trim() : item.title.split(':')[0].trim());
-  const summary = item.description
-    ? `${item.title} — ${item.description}`
-    : item.title;
+const CATEGORIES = [
+  { label: 'Insider Purchase',      pat: /insider.buy|insider.purchas|director.buy|bought.+shares?|acqui\w+.+shares?.+open.market/i },
+  { label: 'Insider Sale',          pat: /insider.sal|director.sal|sold.+shares?.+open.market/i },
+  { label: 'Share Buyback',         pat: /repurchas|buyback|buy.?back|share.purchas|aktietilbage|återköp|tilbakekjøp/i },
+  { label: 'Spinoff / Carve-out',   pat: /spin.?off|carve.?out|demerger|separation|split.?off|utskillelse|spinoff/i },
+  { label: 'M&A',                   pat: /acqui\w+|merger|takeover|acquisition|bid|tender.offer|definitive.agree|kombinasjon|fusjon|sammenslutn/i },
+  { label: 'Strategic Review',      pat: /strategic.review|strategic.alternative|exploring.option|sale.process|put.up.for.sale/i },
+  { label: 'Activist',              pat: /activist|sc.13d|significant.stake|stake.in|position.in|disclosed.+interest/i },
+  { label: 'Management Change',     pat: /appoint|new.ceo|new.cfo|new.chief|resign|step.down|interim.ceo|administrerende|direktør|styreleder/i },
+  { label: 'Capital Raise',         pat: /rights.issue|private.placement|share.issue|capital.raise|equity.offer|emission|kapitalforhøjelse|rettet.emissjon/i },
+  { label: 'Dividend',              pat: /dividend|utbytte|utdelning|udbytte|special.dividend|extraordinary.dividend/i },
+  { label: 'Earnings / Results',    pat: /results|earnings|revenue|profit|quarter|annual.report|full.year|Q[1-4].20|finansiell|årsrapport|halvår/i },
+  { label: 'Clinical / Regulatory', pat: /phase [123]|clinical.trial|fda|ema.approv|regulatory.approv|data.read.?out|patient|efficacy/i },
+  { label: 'Partnership / JV',      pat: /partnership|joint.venture|collaboration|licens|strategic.agreement|samarbeidsavtale/i },
+  { label: 'Contract / Order',      pat: /contract|order.win|awarded|letter.of.intent|framework.agree|rammeavtale/i },
+];
+
+function classifyEvent(text) {
+  for (const { label, pat } of CATEGORIES) {
+    if (pat.test(text)) return label;
+  }
+  return 'Announcement';
+}
+
+function feedItemToFiling(item, region, exchangeLabel) {
+  const entity    = item.company || (item.title.includes(' - ') ? item.title.split(' - ')[0].trim() : item.title.split(':')[0].trim());
+  const searchText = `${item.title} ${item.description || ''}`;
+  const event_type = classifyEvent(searchText);
   return {
     entity,
-    date:          item.pubDate,
-    form_type:     'Announcement',
-    event_type:    eventType,
+    date:           item.pubDate,
+    form_type:      'Announcement',
+    event_type,
     event_headline: item.title,
     event_summary:  item.description || item.title,
     region,
-    exchange:      item.exchange,
+    exchange:       item.exchange || exchangeLabel,
   };
 }
 
@@ -203,17 +225,17 @@ export default async function handler(req, res) {
   // ── Nordic + Canada: Globe Newswire by country ────────────────────────────
   // Oslo Bors / Nasdaq Nordic return JS-rendered HTML from Vercel — unusable.
   // Globe Newswire confirmed working (isXML:true, 20 items).
-  for (const [flag, exchange, region, label] of [
-    [inclOslo, 'Oslo',       'nordic', 'Oslo Announcement'],
-    [inclSto,  'Stockholm',  'nordic', 'Stockholm Announcement'],
-    [inclCph,  'Copenhagen', 'nordic', 'Copenhagen Announcement'],
-    [inclHel,  'Helsinki',   'nordic', 'Helsinki Announcement'],
-    [inclCA,   'Canada',     'canada', 'Canada Announcement'],
+  for (const [flag, exchange, region] of [
+    [inclOslo, 'Oslo',       'nordic'],
+    [inclSto,  'Stockholm',  'nordic'],
+    [inclCph,  'Copenhagen', 'nordic'],
+    [inclHel,  'Helsinki',   'nordic'],
+    [inclCA,   'Canada',     'canada'],
   ]) {
     if (flag)
       tasks.push(globeNewswireFeed(exchange)
         .then(items => items.forEach(item =>
-          raw.push(feedItemToFiling(item, region, label))
+          raw.push(feedItemToFiling(item, region))
         )));
   }
 

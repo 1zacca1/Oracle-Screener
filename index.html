@@ -800,12 +800,18 @@ function regionBadge(r) {
 }
 function eventBadgeClass(ev) {
   const e = (ev || '').toLowerCase();
-  if (e.includes('spinoff') || e.includes('carve')) return 'b-spinoff';
-  if (e.includes('buyback'))   return 'b-buyback';
-  if (e.includes('insider'))   return 'b-insider';
-  if (e.includes('strategic') || e.includes('m&a')) return 'b-strategic';
-  if (e.includes('activist'))  return 'b-activist';
-  if (e.includes('inflect') || e.includes('core')) return 'b-inflection';
+  if (e.includes('spinoff') || e.includes('carve'))          return 'b-spinoff';
+  if (e.includes('buyback') || e.includes('repurchas'))      return 'b-buyback';
+  if (e.includes('insider'))                                  return 'b-insider';
+  if (e.includes('m&a') || e.includes('merger') || e.includes('acqui') || e.includes('takeover') || e.includes('bid')) return 'b-strategic';
+  if (e.includes('strategic'))                                return 'b-strategic';
+  if (e.includes('activist'))                                 return 'b-activist';
+  if (e.includes('inflect') || e.includes('core') || e.includes('earnings') || e.includes('results')) return 'b-inflection';
+  if (e.includes('management') || e.includes('ceo') || e.includes('cfo')) return 'b-mgmt';
+  if (e.includes('capital') || e.includes('placement') || e.includes('rights')) return 'b-buyback';
+  if (e.includes('dividend'))                                 return 'b-insider';
+  if (e.includes('clinical') || e.includes('regulatory'))    return 'b-spinoff';
+  if (e.includes('contract') || e.includes('order') || e.includes('partnership')) return 'b-inflection';
   return 'b-mgmt';
 }
 function setLoading(prefix, on) {
