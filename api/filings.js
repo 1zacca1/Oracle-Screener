@@ -193,34 +193,38 @@ export default async function handler(req, res) {
   const tasks = [];
 
   // ── US: SEC EDGAR ──────────────────────────────────────────────────────────
+  const edgarPush = (type, summary) => x => raw.push({
+    ...x, event_type: type, event_summary: summary, region: 'us',
+  });
+
   if (inclUS) {
     if (events.includes('Spinoffs/carve-outs'))
       tasks.push(edgarSearch({ keywords: ['spin-off','spinoff','carve-out','split-off'], form: '8-K', start, end })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Spinoff/Carve-out', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Spinoff/Carve-out', '8-K filing: spin-off, carve-out, or split-off announcement'))));
 
     if (events.includes('Significant buybacks'))
       tasks.push(edgarSearch({ keywords: ['repurchase program','share repurchase authorization','stock repurchase program'], form: '8-K', start, end })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Buyback', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Share Buyback', '8-K filing: share repurchase program announced or authorised'))));
 
     if (events.includes('Insider purchases'))
       tasks.push(getForm4Issuers(start, end)
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Insider Purchase', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Insider Purchase', 'Form 4 filed: insider securities transaction reported'))));
 
     if (events.includes('Strategic reviews/M&A'))
       tasks.push(edgarSearch({ keywords: ['strategic review','strategic alternatives','merger agreement','definitive agreement'], form: '8-K', start, end })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Strategic Review/M&A', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('M&A', '8-K filing: strategic review, merger agreement, or sale process announced'))));
 
     if (events.includes('Activist involvement'))
       tasks.push(edgarSearch({ keywords: [], form: 'SC 13D', start, end })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Activist (SC 13D)', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Activist', 'SC 13D filed: activist investor disclosed significant stake (>5%)'))));
 
     if (events.includes('Management changes'))
       tasks.push(edgarSearch({ keywords: ['appointed as Chief Executive','new Chief Executive','new CEO'], form: '8-K', start, end, limit: 6 })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Management Change', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Management Change', '8-K filing: CEO or senior executive appointment or departure'))));
 
     if (events.includes('Core biz inflecting'))
       tasks.push(edgarSearch({ keywords: ['record revenue','record earnings','first profitable','inflection point'], form: '8-K', start, end })
-        .then(h => h.forEach(x => raw.push({ ...x, event_type: 'Business Inflection', region: 'us' }))));
+        .then(h => h.forEach(edgarPush('Business Inflection', '8-K filing: record revenue, first profitable quarter, or business inflection point'))));
   }
 
   // ── Nordic + Canada: Globe Newswire by country ────────────────────────────

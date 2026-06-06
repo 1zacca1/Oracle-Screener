@@ -991,7 +991,6 @@ function catalystCard(f) {
   const ticker = f.ticker || f.sym    || '';
   const exch   = f.exchange || (f.region === 'us' ? 'US' : f.region === 'canada' ? 'TSX' : 'Nordic');
   const date   = f.date   ? f.date.slice(0, 10) : '';
-  const summary = f.event_summary || f.form_type || '';
   return `<div class="idea-card">
     <div class="card-top">
       <div class="card-ident">
@@ -1002,8 +1001,8 @@ function catalystCard(f) {
         ${date ? `<span style="margin-left:auto;font-size:11px;color:var(--text2)">${esc(date)}</span>` : ''}
       </div>
     </div>
-    <div class="co-name">${esc(name)}</div>
-    ${f.event_headline ? `<div class="tagline" style="font-weight:500;color:var(--text);margin-bottom:4px">${esc(f.event_headline)}</div>` : ''}
+    <div class="co-name" style="font-size:16px;font-weight:700;margin-bottom:6px">${esc(name)}</div>
+    ${f.event_headline ? `<div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:4px">${esc(f.event_headline)}</div>` : ''}
     ${f.event_summary && f.event_summary !== f.event_headline ? `<div class="tagline">${esc(f.event_summary)}</div>` : ''}
     <div class="card-actions" style="margin-top:14px">
       <button class="btn btn-ghost save-btn">Save idea</button>
