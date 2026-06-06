@@ -104,7 +104,7 @@ const GNW_COUNTRY = {
   Canada:     'Canada',
 };
 
-async function globeNewswireFeed(exchange, limit = 15) {
+async function globeNewswireFeed(exchange, limit = 20) {
   const country = GNW_COUNTRY[exchange];
   if (!country) return [];
   const url = `https://www.globenewswire.com/RssFeed/country/${encodeURIComponent(country)}`;
@@ -114,19 +114,44 @@ async function globeNewswireFeed(exchange, limit = 15) {
     const xml = await r.text();
     if (!xml.includes('<item>')) return [];
     return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, limit).map(m => {
-      const raw = tag => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
-      // GNW <author> is "email@domain.com (Company Name)" — extract the name part
+      const block = m[1];
+      const raw = tag => block.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`))?.[1]?.trim() || '';
+      const title = raw('title');
+      const desc  = raw('description').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+
+      // Company name strategy (in priority order):
+      // 1. <author> tag: either "Company Name" or "email@x.com (Company Name)"
+      // 2. <dc:creator> tag
+      // 3. GNW descriptions often start: "City, Date – Company Name, ..."
+      //    or "City, Date – Company Name announces..."
       const authorRaw = raw('author') || raw('dc:creator') || '';
-      const company   = authorRaw.match(/\(([^)]+)\)/)?.[1] || authorRaw || '';
-      const title     = raw('title');
-      const desc      = raw('description').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').slice(0, 280).trim();
-      return { company, title, description: desc, pubDate: raw('pubDate'), exchange };
+      let company = authorRaw.match(/\(([^)]+)\)/)?.[1]   // "email (Name)"
+                 || (authorRaw.includes('@') ? '' : authorRaw); // plain name, not email
+      if (!company) {
+        // Try "– Company Name," or "– Company Name " pattern in description
+        const m2 = desc.match(/–\s+([^,–]{3,60?}?)[,\s]/);
+        company = m2?.[1]?.trim() || '';
+      }
+      if (!company) {
+        // Last resort: first segment of title before " Announces" / " Reports" / " –"
+        company = title.split(/\s+(announces?|reports?|–|-)\s+/i)[0]?.trim() || '';
+      }
+
+      return { company, title, description: desc.slice(0, 280), pubDate: raw('pubDate'), exchange };
     });
   } catch { return []; }
 }
 
 // Convert a feed item to a filing record
-const EARNINGS_FILTER = /\b(results|earnings|revenue|quarterly|annual report|full.year|half.year|Q[1-4] 20|interim report|financial results|årsrapport|halvårsrapport|kvartalsrapport|delårsrapport|resultat|omsætning|liikevaihto)\b/i;
+const NOISE_FILTER = /\b(
+  results|earnings|revenue|quarterly|annual.report|full.year|half.year|Q[1-4]\s20|interim.report|financial.results|
+  årsrapport|halvårsrapport|kvartalsrapport|delårsrapport|resultat|omsætning|liikevaihto|
+  annual.general.meeting|general.meeting|agm|egm|extraordinary.general|
+  prospectus|listing.prospectus|base.prospectus|
+  notice.of.meeting|notice.to.shareholders|
+  insider.list|disclosure.of.major|voting.rights|total.voting|share.capital.change|
+  press.release\s*[–-]\s*no\.\s*\d|generalforsamling|ordinær.generalforsamling
+)\b/ix;
 
 const CATEGORIES = [
   { label: 'Insider Purchase',      pat: /insider.buy|insider.purchas|director.buy|bought.+shares?|acqui\w+.+shares?.+open.market/i },
@@ -152,7 +177,7 @@ function classifyEvent(text) {
 
 function feedItemToFiling(item, region) {
   const searchText = `${item.title} ${item.description || ''}`;
-  if (EARNINGS_FILTER.test(searchText)) return null;
+  if (NOISE_FILTER.test(searchText)) return null;
   // Company name: GNW puts it in item.company (parsed from <author>)
   // Fallback: "Company Name - Headline" format or first segment before ":"
   const name = item.company
