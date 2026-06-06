@@ -800,12 +800,17 @@ function regionBadge(r) {
 }
 function eventBadgeClass(ev) {
   const e = (ev || '').toLowerCase();
-  if (e.includes('spinoff') || e.includes('carve')) return 'b-spinoff';
-  if (e.includes('buyback'))   return 'b-buyback';
-  if (e.includes('insider'))   return 'b-insider';
-  if (e.includes('strategic') || e.includes('m&a')) return 'b-strategic';
-  if (e.includes('activist'))  return 'b-activist';
-  if (e.includes('inflect') || e.includes('core')) return 'b-inflection';
+  if (e.includes('spinoff') || e.includes('carve'))          return 'b-spinoff';
+  if (e.includes('buyback') || e.includes('repurchas'))      return 'b-buyback';
+  if (e.includes('insider'))                                  return 'b-insider';
+  if (e.includes('m&a') || e.includes('merger') || e.includes('acqui') || e.includes('takeover') || e.includes('bid')) return 'b-strategic';
+  if (e.includes('strategic'))                                return 'b-strategic';
+  if (e.includes('activist'))                                 return 'b-activist';
+  if (e.includes('inflect') || e.includes('core'))                                  return 'b-inflection';
+  if (e.includes('management') || e.includes('ceo') || e.includes('cfo')) return 'b-mgmt';
+  if (e.includes('capital') || e.includes('placement') || e.includes('rights')) return 'b-buyback';
+  if (e.includes('clinical') || e.includes('regulatory'))    return 'b-spinoff';
+  if (e.includes('contract') || e.includes('order') || e.includes('partnership')) return 'b-inflection';
   return 'b-mgmt';
 }
 function setLoading(prefix, on) {
@@ -998,7 +1003,8 @@ function catalystCard(f) {
       </div>
     </div>
     <div class="co-name">${esc(name)}</div>
-    ${summary ? `<div class="tagline">${esc(summary)}</div>` : ''}
+    ${f.event_headline ? `<div class="tagline" style="font-weight:500;color:var(--text);margin-bottom:4px">${esc(f.event_headline)}</div>` : ''}
+    ${f.event_summary && f.event_summary !== f.event_headline ? `<div class="tagline">${esc(f.event_summary)}</div>` : ''}
     <div class="card-actions" style="margin-top:14px">
       <button class="btn btn-ghost save-btn">Save idea</button>
       <button class="btn btn-ghost pitch-btn" style="font-size:12px;padding:6px 14px">Generate pitch →</button>
@@ -1052,7 +1058,7 @@ async function generatePitch(idea, card) {
   const exch    = idea.exchange || '';
   const userMsg = `Company: ${name}${ticker ? ` (${ticker}` : ''}${exch ? `, ${exch})` : (ticker ? ')' : '')}
 Event type: ${idea.event_type || idea.form_type || ''}
-Event summary: ${idea.event_summary || idea.tagline || ''}
+Event: ${idea.event_headline || idea.event_summary || idea.tagline || ''}
 Initial thesis: ${idea.thesis || ''}
 
 Write the three-paragraph pitch now.`;
