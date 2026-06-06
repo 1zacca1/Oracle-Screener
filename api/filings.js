@@ -169,14 +169,19 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const {
-    events   = [],
-    lookback = 'past 7 days',
-    universe = 'Nordic + US',
+    events    = [],
+    lookback  = 'past 7 days',
+    universe  = 'Nordic + US',
+    exchanges = ['US', 'Oslo', 'Stockholm', 'Copenhagen', 'Helsinki'],
   } = req.body;
 
   const { start, end } = lookbackDates(lookback);
-  const inclUS     = universe !== 'Nordic only';
-  const inclNordic = universe !== 'US only';
+  const inclUS     = universe !== 'Nordic only' && exchanges.includes('US');
+  const inclOslo   = universe !== 'US only'     && exchanges.includes('Oslo');
+  const inclSto    = universe !== 'US only'     && exchanges.includes('Stockholm');
+  const inclCph    = universe !== 'US only'     && exchanges.includes('Copenhagen');
+  const inclHel    = universe !== 'US only'     && exchanges.includes('Helsinki');
+  const inclNordic = inclOslo || inclSto || inclCph || inclHel;
 
   const raw   = [];
   const tasks = [];
@@ -213,35 +218,36 @@ export default async function handler(req, res) {
   }
 
   // ── Nordic: Oslo + Stockholm + Copenhagen + Helsinki ───────────────────────
-  if (inclNordic) {
-    // Oslo Bors Newsweb (dated RSS)
+  if (inclOslo)
     tasks.push(newswebOslo(start, end)
       .then(items => items.forEach(item =>
         raw.push(feedItemToFiling(item, 'nordic', 'Oslo Announcement'))
       )));
 
-    // Nasdaq Nordic: Stockholm, Copenhagen, Helsinki
+  if (inclSto)
     tasks.push(nasdaqNordicFeed('stockholm', 'Stockholm')
       .then(items => items.forEach(item =>
         raw.push(feedItemToFiling(item, 'nordic', 'Stockholm Announcement'))
       )));
 
+  if (inclCph)
     tasks.push(nasdaqNordicFeed('copenhagen', 'Copenhagen')
       .then(items => items.forEach(item =>
         raw.push(feedItemToFiling(item, 'nordic', 'Copenhagen Announcement'))
       )));
 
+  if (inclHel)
     tasks.push(nasdaqNordicFeed('helsinki', 'Helsinki')
       .then(items => items.forEach(item =>
         raw.push(feedItemToFiling(item, 'nordic', 'Helsinki Announcement'))
       )));
 
-    // MFN as fallback aggregator (catches anything the above miss)
+  // MFN as fallback aggregator only when fetching all Nordic markets
+  if (inclOslo && inclSto && inclCph && inclHel)
     tasks.push(mfnFeed()
       .then(items => items.forEach(item =>
         raw.push(feedItemToFiling(item, 'nordic', 'Nordic Announcement'))
       )));
-  }
 
   // Run filings + ticker map fetch in parallel
   const [, tickerMap] = await Promise.all([

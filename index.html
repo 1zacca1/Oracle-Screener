@@ -521,6 +521,16 @@
             <option>US only</option>
           </select>
         </div>
+        <div class="full">
+          <label class="field-label">Exchange</label>
+          <div class="pills" id="c-exchange-pills">
+            <div class="pill on" data-val="US">US (NYSE / Nasdaq)</div>
+            <div class="pill on" data-val="Oslo">Oslo</div>
+            <div class="pill on" data-val="Stockholm">Stockholm</div>
+            <div class="pill on" data-val="Copenhagen">Copenhagen</div>
+            <div class="pill on" data-val="Helsinki">Helsinki</div>
+          </div>
+        </div>
         <div>
           <label class="field-label">Lookback Window</label>
           <select id="c-lookback">
@@ -697,7 +707,7 @@ bindSlider('s-insider','%');
 // ════════════════════════════════════════
 //  Catalyst pills
 // ════════════════════════════════════════
-document.querySelectorAll('#c-pills .pill').forEach(p =>
+document.querySelectorAll('#c-pills .pill, #c-exchange-pills .pill').forEach(p =>
   p.addEventListener('click', () => p.classList.toggle('on'))
 );
 
@@ -903,15 +913,18 @@ function renderScreenerResults(ideas, containerId) {
 //  MODULE 2 — Catalyst Scanner
 // ════════════════════════════════════════
 async function runCatalyst() {
-  const selected = [...document.querySelectorAll('#c-pills .pill.on')].map(p => p.dataset.val);
-  if (!selected.length) { setError('c', 'Select at least one event type.'); return; }
+  const selected  = [...document.querySelectorAll('#c-pills .pill.on')].map(p => p.dataset.val);
+  const exchanges = [...document.querySelectorAll('#c-exchange-pills .pill.on')].map(p => p.dataset.val);
+  if (!selected.length)  { setError('c', 'Select at least one event type.'); return; }
+  if (!exchanges.length) { setError('c', 'Select at least one exchange.'); return; }
 
   const p = {
-    universe: document.getElementById('c-universe').value,
-    lookback: document.getElementById('c-lookback').value,
-    mktcap:   document.getElementById('c-mktcap').value,
-    sector:   document.getElementById('c-sector').value.trim() || 'any',
-    events:   selected,
+    universe:  document.getElementById('c-universe').value,
+    lookback:  document.getElementById('c-lookback').value,
+    mktcap:    document.getElementById('c-mktcap').value,
+    sector:    document.getElementById('c-sector').value.trim() || 'any',
+    events:    selected,
+    exchanges,
   };
 
   setError('c', '');
@@ -920,7 +933,7 @@ async function runCatalyst() {
 
   try {
     // Step 1: Fetch real filings from EDGAR + Newsweb
-    document.querySelector('#c-load .loading-msg').textContent = 'Fetching filings from SEC EDGAR & Oslo Bors…';
+    document.querySelector('#c-load .loading-msg').textContent = `Fetching filings from ${exchanges.join(', ')}…`;
     const filingsRes = await fetch('/api/filings', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
