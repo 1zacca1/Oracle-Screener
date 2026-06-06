@@ -3,7 +3,10 @@ const UA_BROWSER = { 'User-Agent': 'Mozilla/5.0 (compatible; Oracle-Screener/1.0
 
 async function testFeed(label, url, ua = UA_BOT) {
   try {
-    const r = await fetch(url, { headers: ua });
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(url, { headers: ua, signal: ctrl.signal });
+    clearTimeout(t);
     const text = await r.text();
     const isXML = text.trim().startsWith('<?xml') || text.includes('<rss') || text.includes('<feed');
     const itemCount = (text.match(/<item>/g) || text.match(/<entry>/g) || []).length;
