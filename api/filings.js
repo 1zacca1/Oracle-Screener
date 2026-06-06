@@ -137,15 +137,7 @@ async function globeNewswireFeed(exchange, limit = 20) {
 }
 
 // Convert a feed item to a filing record
-const NOISE_FILTER = /\b(
-  results|earnings|revenue|quarterly|annual.report|full.year|half.year|Q[1-4]\s20|interim.report|financial.results|
-  årsrapport|halvårsrapport|kvartalsrapport|delårsrapport|resultat|omsætning|liikevaihto|
-  annual.general.meeting|general.meeting|agm|egm|extraordinary.general|
-  prospectus|listing.prospectus|base.prospectus|
-  notice.of.meeting|notice.to.shareholders|
-  insider.list|disclosure.of.major|voting.rights|total.voting|share.capital.change|
-  press.release\s*[–-]\s*no\.\s*\d|generalforsamling|ordinær.generalforsamling
-)\b/ix;
+const NOISE_FILTER = /\b(results|earnings|revenue|quarterly|annual report|full.year|half.year|interim report|financial results|årsrapport|halvårsrapport|kvartalsrapport|delårsrapport|resultat|omsætning|liikevaihto|annual general meeting|general meeting|\bagm\b|\begm\b|extraordinary general|prospectus|notice of meeting|notice to shareholders|insider list|disclosure of major|voting rights|total voting|share capital change|generalforsamling|ordinær generalforsamling)\b/i;
 
 const CATEGORIES = [
   { label: 'Insider Purchase',      pat: /insider.buy|insider.purchas|director.buy|bought.+shares?|acqui\w+.+shares?.+open.market/i },
