@@ -136,7 +136,6 @@ const CATEGORIES = [
   { label: 'Management Change',     pat: /appoint|new.ceo|new.cfo|new.chief|resign|step.down|interim.ceo|administrerende|direktør|styreleder/i },
   { label: 'Capital Raise',         pat: /rights.issue|private.placement|share.issue|capital.raise|equity.offer|emission|kapitalforhøjelse|rettet.emissjon/i },
   { label: 'Dividend',              pat: /dividend|utbytte|utdelning|udbytte|special.dividend|extraordinary.dividend/i },
-  { label: 'Earnings / Results',    pat: /results|earnings|revenue|profit|quarter|annual.report|full.year|Q[1-4].20|finansiell|årsrapport|halvår/i },
   { label: 'Clinical / Regulatory', pat: /phase [123]|clinical.trial|fda|ema.approv|regulatory.approv|data.read.?out|patient|efficacy/i },
   { label: 'Partnership / JV',      pat: /partnership|joint.venture|collaboration|licens|strategic.agreement|samarbeidsavtale/i },
   { label: 'Contract / Order',      pat: /contract|order.win|awarded|letter.of.intent|framework.agree|rammeavtale/i },
