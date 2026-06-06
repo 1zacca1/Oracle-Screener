@@ -1,52 +1,42 @@
-const YF = 'https://query2.finance.yahoo.com';
-const H = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' };
+const UA = { 'User-Agent': 'Oracle-Screener/1.0 contact@oracle-screener.app' };
+
+async function testFeed(label, url) {
+  try {
+    const r = await fetch(url, { headers: UA });
+    const text = await r.text();
+    const isXML = text.trim().startsWith('<?xml') || text.includes('<rss') || text.includes('<feed');
+    const itemCount = (text.match(/<item>/g) || text.match(/<entry>/g) || []).length;
+    const sample = text.slice(0, 200).replace(/\s+/g, ' ');
+    return { label, status: r.status, isXML, itemCount, sample };
+  } catch (e) {
+    return { label, error: e.message };
+  }
+}
 
 export default async function handler(req, res) {
-  const results = {};
+  const today = new Date().toISOString().split('T')[0];
+  const week  = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
 
-  // Test 1: quoteSummary for a known ticker
-  const r1 = await fetch(`${YF}/v10/finance/quoteSummary/AAPL?modules=keyStatistics,financialData,price`, { headers: H });
-  const d1 = await r1.json();
-  const m = d1?.quoteSummary?.result?.[0];
-  results.AAPL = m ? {
-    evEbitda:  m.keyStatistics?.enterpriseToEbitda?.raw,
-    fcf:       m.financialData?.freeCashflow?.raw,
-    mktCap:    m.price?.marketCap?.raw,
-    totalDebt: m.financialData?.totalDebt?.raw,
-    totalCash: m.financialData?.totalCash?.raw,
-  } : d1;
+  const tests = await Promise.all([
+    // Oslo Bors Newsweb
+    testFeed('oslo_newsweb_dated',   `https://newsweb.oslobors.no/message/browsecategory?category=OB&from=${week}&to=${today}&output=rss`),
+    testFeed('oslo_newsweb_nodates', 'https://newsweb.oslobors.no/message/browsecategory?category=OB&output=rss'),
+    testFeed('oslo_newsweb_v2',      'https://www.newsweb.no/newsweb/rss.do?market=OB'),
 
-  // Test 2: Nordic ticker
-  const r2 = await fetch(`${YF}/v10/finance/quoteSummary/BOUVET.OL?modules=keyStatistics,financialData,price`, { headers: H });
-  const d2 = await r2.json();
-  const m2 = d2?.quoteSummary?.result?.[0];
-  results.BOUVET_OL = m2 ? {
-    evEbitda:  m2.keyStatistics?.enterpriseToEbitda?.raw,
-    fcf:       m2.financialData?.freeCashflow?.raw,
-    mktCap:    m2.price?.marketCap?.raw,
-  } : d2;
+    // Nasdaq Nordic — Stockholm, Copenhagen, Helsinki
+    testFeed('nasdaq_stockholm',           'https://www.nasdaqomxnordic.com/feeds/news?market=stockholm'),
+    testFeed('nasdaq_stockholm_regulatory','https://www.nasdaqomxnordic.com/feeds/news?market=stockholm&newstype=regulatory'),
+    testFeed('nasdaq_copenhagen',          'https://www.nasdaqomxnordic.com/feeds/news?market=copenhagen'),
+    testFeed('nasdaq_helsinki',            'https://www.nasdaqomxnordic.com/feeds/news?market=helsinki'),
+    testFeed('nasdaq_nordic_all',          'https://www.nasdaqomxnordic.com/feeds/news'),
 
-  // Test 3: YF screener POST
-  const r3 = await fetch(`${YF}/v1/finance/screener`, {
-    method: 'POST',
-    headers: { ...H, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      offset: 0, size: 5,
-      sortField: 'intradaymarketcap', sortType: 'asc',
-      quoteType: 'EQUITY',
-      query: { operator: 'and', operands: [
-        { operator: 'gt', operands: ['enterprisevalueebidta', 0.1] },
-        { operator: 'lt', operands: ['enterprisevalueebidta', 6] },
-        { operator: 'gt', operands: ['intradaymarketcap', 50e6] },
-        { operator: 'lt', operands: ['intradaymarketcap', 2e9] },
-      ]},
-      userId: '', userIdType: 'guid',
-    }),
-  });
-  const d3 = await r3.json();
-  results.screener = d3?.finance?.result?.[0]?.quotes?.map(q => ({
-    symbol: q.symbol, name: q.shortName, mktCap: q.marketCap,
-  })) ?? d3;
+    // MFN (Modular Finance Nordic) — aggregates Nordic press releases
+    testFeed('mfn_latest',   'https://mfn.se/feeds/latest'),
+    testFeed('mfn_rss',      'https://mfn.se/rss'),
 
-  return res.json(results);
+    // EDGAR EFTS (control — should always work)
+    testFeed('edgar_efts',   `https://efts.sec.gov/LATEST/search-index?forms=8-K&dateRange=custom&startdt=${week}&enddt=${today}&q=%22spinoff%22`),
+  ]);
+
+  return res.json(tests);
 }
